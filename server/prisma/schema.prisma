@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  timezone  String   @default("America/New_York")
+  createdAt DateTime @default(now())
+
+  lists          List[]
+  timelogEntries TimelogEntry[]
+  projects       Project[]
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  title       String
+  type        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items            TemplateItem[]
+  lists            List[]
+  templateProjects TemplateProject[]
+}
+
+model TemplateItem {
+  id         String  @id @default(cuid())
+  templateId String
+  parentId   String?
+  title      String
+  position   Int
+  unit       String?
+
+  template Template       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  parent   TemplateItem?  @relation("TIChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children TemplateItem[] @relation("TIChildren")
+}
+
+model TemplateProject {
+  id         String  @id @default(cuid())
+  templateId String
+  parentId   String?
+  title      String
+  position   Int
+  color      String?
+
+  template Template          @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  parent   TemplateProject?  @relation("TPChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children TemplateProject[] @relation("TPChildren")
+}
+
+model List {
+  id         String   @id @default(cuid())
+  userId     String
+  templateId String?
+  title      String
+  type       String
+  createdAt  DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template    Template?    @relation(fields: [templateId], references: [id])
+  items       ListItem[]
+  submissions Submission[]
+}
+
+model ListItem {
+  id        String  @id @default(cuid())
+  listId    String
+  parentId  String?
+  title     String
+  position  Int
+  unit      String?
+  collapsed Boolean @default(false)
+
+  list            List             @relation(fields: [listId], references: [id], onDelete: Cascade)
+  parent          ListItem?        @relation("LIChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children        ListItem[]       @relation("LIChildren")
+  submissionItems SubmissionItem[]
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  listId      String
+  submittedAt DateTime @default(now())
+  notes       String?
+
+  list  List             @relation(fields: [listId], references: [id], onDelete: Cascade)
+  items SubmissionItem[]
+}
+
+model SubmissionItem {
+  id           String   @id @default(cuid())
+  submissionId String
+  itemId       String
+  checked      Boolean?
+  score        Int?
+  comment      String?
+  numberValue  Float?
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  item       ListItem   @relation(fields: [itemId], references: [id])
+}
+
+model Project {
+  id                String  @id @default(cuid())
+  userId            String
+  templateProjectId String?
+  title             String
+  parentId          String?
+  color             String?
+  position          Int     @default(0)
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent         Project?       @relation("ProjChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children       Project[]      @relation("ProjChildren")
+  timelogEntries TimelogEntry[]
+}
+
+model TimelogEntry {
+  id          String    @id @default(cuid())
+  userId      String
+  projectId   String
+  comment     String?
+  startTime   DateTime
+  endTime     DateTime?
+  submittedAt DateTime  @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id])
+}
+

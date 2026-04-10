@@ -7,7 +7,6 @@ export default function LandingPage() {
   const nav = useNavigate();
   const toast = useToast();
   const [token, setToken] = useState('');
-  const [adminToken, setAdminToken] = useState('');
   const [creating, setCreating] = useState(false);
 
   async function handleCreate() {
@@ -29,14 +28,6 @@ export default function LandingPage() {
       nav(`/u/${token.trim()}`);
     } catch {
       toast('Dashboard not found', 'error');
-    }
-  }
-
-  function handleAdmin(e) {
-    e.preventDefault();
-    if (adminToken.trim()) {
-      sessionStorage.setItem('adminToken', adminToken.trim());
-      nav('/admin');
     }
   }
 
@@ -73,18 +64,7 @@ export default function LandingPage() {
             </form>
           </div>
 
-          <details style={{ width: '100%', maxWidth: 380 }}>
-            <summary style={{ cursor: 'pointer', color: 'var(--text3)', fontSize: 13 }}>Admin access</summary>
-            <form onSubmit={handleAdmin} style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <input
-                type="password"
-                value={adminToken}
-                onChange={e => setAdminToken(e.target.value)}
-                placeholder="Admin token…"
-              />
-              <button className="btn btn-secondary" type="submit" style={{ whiteSpace: 'nowrap' }}>Enter</button>
-            </form>
-          </details>
+          <a href="/admin" style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center' }}>Admin</a>
         </div>
       </div>
     </div>

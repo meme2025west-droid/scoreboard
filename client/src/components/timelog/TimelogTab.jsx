@@ -385,7 +385,6 @@ export default function TimelogTab({ token, user }) {
             >
               {showStarredOnly ? 'Showing starred' : 'Show starred only'}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowNewProject(true)}>+ Add</button>
           </div>
         </div>
         {projects.length === 0 && (
@@ -413,6 +412,9 @@ export default function TimelogTab({ token, user }) {
             />
           </>
         )}
+        <div style={{ marginTop: 12 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowNewProject(true)}>+ Add</button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>

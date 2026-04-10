@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { verifyAdmin, getOverview, getAllUsers, getUserLists, getUserTimelog } from '../api/admin.js';
 import {
   getTemplate,
@@ -221,7 +222,8 @@ function TemplateItemRow({
 
 export default function AdminPage() {
   const toast = useToast();
-  const [adminToken, setAdminToken] = useState(sessionStorage.getItem('adminToken') || '');
+  const nav = useNavigate();
+  const [adminToken, setAdminToken] = useState(localStorage.getItem('adminToken') || '');
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
@@ -247,6 +249,20 @@ export default function AdminPage() {
   const [templateItemsVersion, setTemplateItemsVersion] = useState(0);
 
   useEffect(() => {
+    const saved = localStorage.getItem('adminToken');
+    if (saved) {
+      setChecking(true);
+      verifyAdmin(saved)
+        .then(() => setAuthed(true))
+        .catch(() => {
+          localStorage.removeItem('adminToken');
+          setAdminToken('');
+        })
+        .finally(() => setChecking(false));
+    }
+  }, []);
+
+  useEffect(() => {
     if (authed) {
       loadOverview();
       loadUsers();
@@ -259,13 +275,20 @@ export default function AdminPage() {
     setChecking(true);
     try {
       await verifyAdmin(adminToken);
-      sessionStorage.setItem('adminToken', adminToken);
+      localStorage.setItem('adminToken', adminToken);
       setAuthed(true);
     } catch {
       toast('Invalid admin token', 'error');
     } finally {
       setChecking(false);
     }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('adminToken');
+    setAdminToken('');
+    setAuthed(false);
+    nav('/');
   }
 
   async function loadOverview() {
@@ -338,22 +361,29 @@ export default function AdminPage() {
       <nav className="nav"><span className="nav-brand">⬡ Scorecard — Admin</span></nav>
       <div className="page-content">
         <div className="landing">
-          <div>
-            <h1 style={{ fontSize: 28 }}>Admin access</h1>
-            <p>Enter your admin token to continue.</p>
-          </div>
-          <form onSubmit={handleAuth} className="landing-actions">
-            <input
-              type="password"
-              value={adminToken}
-              onChange={e => setAdminToken(e.target.value)}
-              placeholder="Admin token…"
-              autoFocus
-            />
-            <button className="btn btn-primary" type="submit" style={{ justifyContent: 'center' }} disabled={checking}>
-              {checking ? 'Checking…' : 'Enter admin'}
-            </button>
-          </form>
+          {checking ? (
+            <div><p>Verifying…</p></div>
+          ) : (
+            <>
+              <div>
+                <h1 style={{ fontSize: 28 }}>Admin access</h1>
+                <p>Enter your admin token to continue.</p>
+              </div>
+              <form onSubmit={handleAuth} className="landing-actions">
+                <input
+                  type="password"
+                  value={adminToken}
+                  onChange={e => setAdminToken(e.target.value)}
+                  placeholder="Admin token…"
+                  autoFocus
+                />
+                <button className="btn btn-primary" type="submit" style={{ justifyContent: 'center' }}>
+                  Enter admin
+                </button>
+              </form>
+              <a href="/" style={{ color: 'var(--text3)', fontSize: 13 }}>← Back to site</a>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -370,6 +400,7 @@ export default function AdminPage() {
             </button>
           ))}
           <a href="/" className="nav-tab" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>← Site</a>
+          <button className="nav-tab" onClick={handleLogout}>Log out</button>
         </div>
       </nav>
       <div className="page-content">

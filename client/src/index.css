@@ -83,7 +83,9 @@ label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 4px
 .btn-ghost { background: transparent; color: var(--text2); padding: 4px 8px; border-radius: 6px; font-size: 13px; border: none; cursor: pointer; }
 .btn-ghost:hover { background: var(--bg3); color: var(--text); }
 .btn-sm { padding: 4px 12px; font-size: 13px; }
+.btn-ghost.btn-sm { padding: 4px 8px; }
 .btn-icon { padding: 0; width: 30px; height: 30px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--text3); border: none; cursor: pointer; font-size: 16px; }
+.btn-icon { background: transparent; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: all 0.1s; color: var(--text); }
 .btn-icon:hover { background: var(--bg3); color: var(--text); }
 
 .form-group { margin-bottom: 16px; }
@@ -220,7 +222,7 @@ label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 4px
 .tally-group-four { letter-spacing: 1px; }
 .tally-group-slash { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -52%) scale(1.1); font-size: 15px; line-height: 1; color: var(--accent); }
 .tally-group-remainder { letter-spacing: 1px; }
-.project-tally-btn { padding: 3px 10px; min-width: 40px; }
+.project-tally-btn { padding: 3px 6px; }
 .project-children { padding-left: 18px; }
 .project-drop-zone {
   height: 8px;

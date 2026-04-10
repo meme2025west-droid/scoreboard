@@ -54,10 +54,27 @@ export default function ProjectTree({
   parentId = null,
   dragState: sharedDragState,
   setDragState: setSharedDragState,
+  collapsedNodeIds: sharedCollapsedNodeIds,
+  setCollapsedNodeIds: setSharedCollapsedNodeIds,
 }) {
   const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const [localCollapsedNodeIds, setLocalCollapsedNodeIds] = useState(new Set());
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
+  const collapsedNodeIds = sharedCollapsedNodeIds ?? localCollapsedNodeIds;
+  const setCollapsedNodeIds = setSharedCollapsedNodeIds ?? setLocalCollapsedNodeIds;
+
+  function toggleNodeCollapsed(nodeId) {
+    setCollapsedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }
 
   if (!nodes || nodes.length === 0) return null;
   return (
@@ -108,6 +125,17 @@ export default function ProjectTree({
               setDragState({ draggedId: null, dropTargetKey: null });
             }}
           >
+            {n.children && n.children.length > 0 && (
+              <button
+                className="btn-icon"
+                style={{ fontSize: 14, padding: '2px 4px' }}
+                onClick={e => { e.stopPropagation(); toggleNodeCollapsed(n.id); }}
+                title={collapsedNodeIds.has(n.id) ? 'Expand' : 'Collapse'}
+              >
+                {collapsedNodeIds.has(n.id) ? '▶' : '▼'}
+              </button>
+            )}
+            {!n.children || n.children.length === 0 ? <span style={{ width: 22 }} /> : null}
             <span
               className="project-dot"
               style={{ background: n.color || 'var(--text3)' }}
@@ -148,7 +176,7 @@ export default function ProjectTree({
               title="Delete"
             >✕</button>
           </div>
-          {n.children && n.children.length > 0 && (
+          {n.children && n.children.length > 0 && !collapsedNodeIds.has(n.id) && (
             <ProjectTree
               nodes={n.children}
               selected={selected}
@@ -164,6 +192,8 @@ export default function ProjectTree({
               parentId={n.id}
               dragState={dragState}
               setDragState={setDragState}
+              collapsedNodeIds={collapsedNodeIds}
+              setCollapsedNodeIds={setCollapsedNodeIds}
             />
           )}
           {idx === nodes.length - 1 && (

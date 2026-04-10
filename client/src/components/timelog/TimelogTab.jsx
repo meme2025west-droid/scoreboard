@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getUserProjects, createProject, deleteProject, moveProject, updateProject } from '../../api/projects.js';
-import { getTimelog, getLastEntry, createEntry, deleteEntry } from '../../api/timelog.js';
+import { getTimelog, getLastEntry, createEntry, updateEntry, deleteEntry } from '../../api/timelog.js';
 import { createEffortEntry, getEffortAnalytics } from '../../api/effort.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
@@ -55,6 +55,24 @@ function toLocalInput(date, tz) {
 function inputToUTC(localStr) {
   if (!localStr) return null;
   return new Date(localStr).toISOString();
+}
+
+function getLatestSubmittedEntry(entries) {
+  if (!entries?.length) return null;
+  return entries.reduce((latest, entry) => {
+    if (!latest) return entry;
+    return new Date(entry.submittedAt) > new Date(latest.submittedAt) ? entry : latest;
+  }, null);
+}
+
+function formatDurationLabel(start, end) {
+  if (!start || Number.isNaN(start.getTime())) return '';
+  if (!end || Number.isNaN(end.getTime())) return '';
+  const mins = Math.floor((end - start) / 60000);
+  if (mins < 0) return 'End time is before start time';
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return hrs > 0 ? `${hrs}h ${rem}m` : `${rem}m`;
 }
 
 function getStarredOnlyStorageKey(token) {
@@ -112,6 +130,17 @@ export default function TimelogTab({ token, user }) {
   const requestedView = searchParams.get('timelogView');
   const tab = requestedView === 'analytics' ? 'analytics' : 'log';
 
+  function syncLogFormTimes(sourceEntries, fallbackLastEntry = null) {
+    const latest = getLatestSubmittedEntry(sourceEntries) || fallbackLastEntry;
+    const now = toLocalInput(new Date(), tz);
+    setEndTime(now);
+    if (latest) {
+      setStartTime(toLocalInput(new Date(latest.endTime || latest.submittedAt), tz));
+    } else {
+      setStartTime(now);
+    }
+  }
+
   useEffect(() => {
     loadAll();
   }, [token]);
@@ -154,13 +183,7 @@ export default function TimelogTab({ token, user }) {
       setProjects(projs);
       setEntries(ents);
       await loadTallyCounts(fromISO, toISO);
-      const now = toLocalInput(new Date(), tz);
-      setEndTime(now);
-      if (last) {
-        setStartTime(toLocalInput(new Date(last.submittedAt), tz));
-      } else {
-        setStartTime(now);
-      }
+      syncLogFormTimes(ents, last);
     } catch {
       toast('Failed to load timelog', 'error');
     } finally {
@@ -179,6 +202,7 @@ export default function TimelogTab({ token, user }) {
   async function handleSubmitEntry() {
     if (!selectedProject) return toast('Select a project', 'error');
     if (!startTime) return toast('Start time required', 'error');
+    if (endTime && new Date(endTime) < new Date(startTime)) return toast('End time cannot be before start time', 'error');
     setSubmitting(true);
     try {
       const entry = await createEntry(token, {
@@ -187,11 +211,10 @@ export default function TimelogTab({ token, user }) {
         startTime: inputToUTC(startTime),
         endTime: endTime ? inputToUTC(endTime) : null,
       });
-      setEntries(e => [entry, ...e]);
+      const nextEntries = [entry, ...entries];
+      setEntries(nextEntries);
       setComment('');
-      const now = toLocalInput(new Date(), tz);
-      setStartTime(toLocalInput(new Date(entry.submittedAt), tz));
-      setEndTime(now);
+      syncLogFormTimes(nextEntries);
       toast('Entry logged');
     } catch {
       toast('Failed to log entry', 'error');
@@ -203,10 +226,26 @@ export default function TimelogTab({ token, user }) {
   async function handleDeleteEntry(id) {
     try {
       await deleteEntry(id);
-      setEntries(e => e.filter(x => x.id !== id));
+      const nextEntries = entries.filter((x) => x.id !== id);
+      setEntries(nextEntries);
+      syncLogFormTimes(nextEntries);
       toast('Entry deleted');
     } catch {
       toast('Failed to delete', 'error');
+    }
+  }
+
+  async function handleUpdateEntry(id, data) {
+    try {
+      const updated = await updateEntry(id, data);
+      const nextEntries = entries.map((entry) => (entry.id === id ? updated : entry));
+      setEntries(nextEntries);
+      syncLogFormTimes(nextEntries);
+      toast('Entry updated');
+      return true;
+    } catch {
+      toast('Failed to update entry', 'error');
+      return false;
     }
   }
 
@@ -219,6 +258,12 @@ export default function TimelogTab({ token, user }) {
         color: newProjColor,
       });
       await refreshProjects();
+      setShowStarredOnly(false);
+      try {
+        localStorage.setItem(getStarredOnlyStorageKey(token), 'false');
+      } catch {
+        // Ignore storage errors
+      }
       setShowNewProject(false);
       setNewProjTitle('');
       setNewProjParent(null);
@@ -356,64 +401,64 @@ export default function TimelogTab({ token, user }) {
 
   const starredCount = flattenTree(projects).filter(project => project.starred).length;
   const visibleProjects = showStarredOnly ? filterToStarred(projects) : projects;
+  const previewStart = startTime ? new Date(startTime) : null;
+  const previewEnd = endTime ? new Date(endTime) : new Date();
+  const durationPreview = formatDurationLabel(previewStart, previewEnd);
+  const showOpenDuration = Boolean(startTime) && !endTime && durationPreview && !durationPreview.startsWith('End time');
 
   return (
     <div>
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="section-header" style={{ alignItems: 'flex-end' }}>
-          <div>
-            <span className="sidebar-title">Projects</span>
-            <div style={{ color: 'var(--text3)', fontSize: 13, marginTop: 6 }}>
-              Starred projects are the tally list. Tallies use the analytics date range below.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>From</label>
-              <input type="date" value={rangeFromInput} onChange={e => setRangeFromInput(e.target.value)} style={{ width: 160 }} />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>To</label>
-              <input type="date" value={rangeToInput} onChange={e => setRangeToInput(e.target.value)} style={{ width: 160 }} />
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={applyRange} style={{ height: 38 }}>Apply</button>
-            <button className="btn btn-secondary btn-sm" onClick={applyTodayRange} style={{ height: 38 }}>Today</button>
-            <button
-              className={`btn btn-secondary btn-sm ${showStarredOnly ? 'active-edit-btn' : ''}`}
-              onClick={handleToggleStarredOnly}
-              style={{ height: 38 }}
-            >
-              {showStarredOnly ? 'Showing starred' : 'Show starred only'}
-            </button>
-          </div>
+        <div className="sidebar-title" style={{ margin: 0, marginBottom: 16 }}>Projects</div>
+        <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 16 }}>
+          Starred projects are the tally list. Tallies use the analytics date range below.
         </div>
-        {projects.length === 0 && (
-          <div className="empty" style={{ padding: '12px 0' }}><p>No projects yet.</p></div>
-        )}
-        {projects.length > 0 && (
-          <>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
-              {starredCount} starred {starredCount === 1 ? 'project' : 'projects'} in tally list
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>From</label>
+                <input type="date" value={rangeFromInput} onChange={e => setRangeFromInput(e.target.value)} style={{ width: 160 }} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>To</label>
+                <input type="date" value={rangeToInput} onChange={e => setRangeToInput(e.target.value)} style={{ width: 160 }} />
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={applyRange} style={{ height: 38 }}>Apply</button>
+              <button className="btn btn-secondary btn-sm" onClick={applyTodayRange} style={{ height: 38 }}>Today</button>
+              <button
+                className={`btn btn-secondary btn-sm ${showStarredOnly ? 'active-edit-btn' : ''}`}
+                onClick={handleToggleStarredOnly}
+                style={{ height: 38 }}
+              >
+                {showStarredOnly ? 'Showing starred' : 'Show starred only'}
+              </button>
             </div>
-            {showStarredOnly && visibleProjects.length === 0 && (
-              <div className="empty" style={{ padding: '12px 0' }}><p>No starred projects yet.</p></div>
+            {projects.length === 0 && (
+              <div className="empty" style={{ padding: '12px 0' }}><p>No projects yet.</p></div>
             )}
-            <ProjectTree
-              nodes={visibleProjects}
-              selected={selectedProject}
-              onSelect={setSelectedProject}
-              onDelete={handleDeleteProject}
-              onAddChild={(parentId) => { setNewProjParent(parentId); setShowNewProject(true); }}
-              onMove={handleMoveProject}
-              onOutdent={handleOutdentProject}
-              onToggleStar={handleToggleStar}
-              onAddTally={(project) => { setTallyProject(project); setTallyComment(''); }}
-              tallyCounts={tallyCounts}
-            />
-          </>
-        )}
+            {projects.length > 0 && (
+              <>
+                <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+                  {starredCount} starred {starredCount === 1 ? 'project' : 'projects'} in tally list
+                </div>
+                {showStarredOnly && visibleProjects.length === 0 && (
+                  <div className="empty" style={{ padding: '12px 0' }}><p>No starred projects yet.</p></div>
+                )}
+                <ProjectTree
+                  nodes={visibleProjects}
+                  selected={selectedProject}
+                  onSelect={setSelectedProject}
+                  onDelete={handleDeleteProject}
+                  onAddChild={(parentId) => { setNewProjParent(parentId); setShowNewProject(true); }}
+                  onMove={handleMoveProject}
+                  onOutdent={handleOutdentProject}
+                  onToggleStar={handleToggleStar}
+                  onAddTally={(project) => { setTallyProject(project); setTallyComment(''); }}
+                  tallyCounts={tallyCounts}
+                />
+              </>
+            )}
         <div style={{ marginTop: 12 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowNewProject(true)}>+ Add</button>
+          <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => setShowNewProject(true)}>+ Add</button>
         </div>
       </div>
 
@@ -447,6 +492,11 @@ export default function TimelogTab({ token, user }) {
                 <input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
               </div>
             </div>
+            {durationPreview && (
+              <div style={{ marginBottom: 12, fontSize: 13, color: durationPreview.startsWith('End time') ? 'var(--red)' : 'var(--text2)' }}>
+                Duration preview: {durationPreview}{showOpenDuration ? ' (so far)' : ''}
+              </div>
+            )}
             <div className="form-group">
               <label>What did you work on?</label>
               <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="Describe what you worked on…" style={{ minHeight: 60 }} />
@@ -456,7 +506,7 @@ export default function TimelogTab({ token, user }) {
             </button>
           </div>
 
-          <TimelogList entries={entries} tz={tz} onDelete={handleDeleteEntry} />
+          <TimelogList entries={entries} tz={tz} onDelete={handleDeleteEntry} onUpdate={handleUpdateEntry} />
         </div>
       )}
 

@@ -5,3 +5,6 @@ server/.env
 client/dist/
 dist/
 *.log
+tools/start-desktop-launcher/bin/
+tools/start-desktop-launcher/obj/
+tools/start-desktop-launcher/publish/

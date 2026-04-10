@@ -301,6 +301,15 @@ export default function TimelogTab({ token, user }) {
     }
   }
 
+  async function handleRenameProject(id, title) {
+    try {
+      await updateProject(id, { title });
+      await refreshProjects();
+    } catch {
+      toast('Failed to rename project', 'error');
+    }
+  }
+
   function handleToggleStarredOnly() {
     setShowStarredOnly((prev) => {
       const next = !prev;
@@ -463,6 +472,7 @@ export default function TimelogTab({ token, user }) {
                   onOutdent={handleOutdentProject}
                   onToggleStar={handleToggleStar}
                   onAddTally={(project) => { setTallyProject(project); setTallyComment(''); }}
+                  onRename={handleRenameProject}
                   tallyCounts={tallyCounts}
                 />
               </>

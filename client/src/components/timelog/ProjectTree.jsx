@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
@@ -49,6 +49,7 @@ export default function ProjectTree({
   onOutdent,
   onToggleStar,
   onAddTally,
+  onRename,
   tallyCounts = {},
   depth = 0,
   parentId = null,
@@ -56,13 +57,45 @@ export default function ProjectTree({
   setDragState: setSharedDragState,
   collapsedNodeIds: sharedCollapsedNodeIds,
   setCollapsedNodeIds: setSharedCollapsedNodeIds,
+  editingId: sharedEditingId,
+  setEditingId: setSharedEditingId,
+  editValue: sharedEditValue,
+  setEditValue: setSharedEditValue,
 }) {
   const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
   const [localCollapsedNodeIds, setLocalCollapsedNodeIds] = useState(new Set());
+  const [localEditingId, setLocalEditingId] = useState(null);
+  const [localEditValue, setLocalEditValue] = useState('');
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
   const collapsedNodeIds = sharedCollapsedNodeIds ?? localCollapsedNodeIds;
   const setCollapsedNodeIds = setSharedCollapsedNodeIds ?? setLocalCollapsedNodeIds;
+  const editingId = sharedEditingId !== undefined ? sharedEditingId : localEditingId;
+  const setEditingId = setSharedEditingId ?? setLocalEditingId;
+  const editValue = sharedEditValue !== undefined ? sharedEditValue : localEditValue;
+  const setEditValue = setSharedEditValue ?? setLocalEditValue;
+  const editInputRef = useRef(null);
+
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
+
+  function startEditing(n, e) {
+    e.stopPropagation();
+    setEditingId(n.id);
+    setEditValue(n.title);
+  }
+
+  function commitEdit(n) {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== n.title) {
+      onRename?.(n.id, trimmed);
+    }
+    setEditingId(null);
+  }
 
   function toggleNodeCollapsed(nodeId) {
     setCollapsedNodeIds((prev) => {
@@ -140,7 +173,23 @@ export default function ProjectTree({
               className="project-dot"
               style={{ background: n.color || 'var(--text3)' }}
             />
-            <span style={{ flex: 1 }}>{n.title}</span>
+            {editingId === n.id ? (
+              <input
+                ref={editInputRef}
+                className="project-rename-input"
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(n)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitEdit(n); }
+                  if (e.key === 'Escape') { e.preventDefault(); setEditingId(null); }
+                }}
+                onClick={e => e.stopPropagation()}
+                style={{ flex: 1 }}
+              />
+            ) : (
+              <span style={{ flex: 1 }} onDoubleClick={e => startEditing(n, e)}>{n.title}</span>
+            )}
             <button
               className={`btn-icon project-star-btn ${n.starred ? 'active' : ''}`}
               style={{ fontSize: 14 }}
@@ -187,6 +236,7 @@ export default function ProjectTree({
               onOutdent={onOutdent}
               onToggleStar={onToggleStar}
               onAddTally={onAddTally}
+              onRename={onRename}
               tallyCounts={tallyCounts}
               depth={depth + 1}
               parentId={n.id}
@@ -194,6 +244,10 @@ export default function ProjectTree({
               setDragState={setDragState}
               collapsedNodeIds={collapsedNodeIds}
               setCollapsedNodeIds={setCollapsedNodeIds}
+              editingId={editingId}
+              setEditingId={setEditingId}
+              editValue={editValue}
+              setEditValue={setEditValue}
             />
           )}
           {idx === nodes.length - 1 && (

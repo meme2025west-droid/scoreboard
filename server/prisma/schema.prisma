@@ -39,6 +39,7 @@ model TemplateItem {
   title      String
   position   Int
   unit       String?
+  collapsed  Boolean @default(false)
 
   template Template       @relation(fields: [templateId], references: [id], onDelete: Cascade)
   parent   TemplateItem?  @relation("TIChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)

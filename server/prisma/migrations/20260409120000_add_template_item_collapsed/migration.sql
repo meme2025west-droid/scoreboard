@@ -1,0 +1,1 @@
+ALTER TABLE "TemplateItem" ADD COLUMN "collapsed" BOOLEAN NOT NULL DEFAULT false;

@@ -13,3 +13,9 @@ export const deleteTemplate = (adminToken, id) =>
   api.delete(`/templates/${id}`, adminHeaders(adminToken)).then(r => r.data);
 export const addTemplateItem = (adminToken, id, data) =>
   api.post(`/templates/${id}/items`, data, adminHeaders(adminToken)).then(r => r.data);
+export const updateTemplateItem = (adminToken, itemId, data) =>
+  api.patch(`/templates/items/${itemId}`, data, adminHeaders(adminToken)).then(r => r.data);
+export const moveTemplateItem = (adminToken, itemId, data) =>
+  api.post(`/templates/items/${itemId}/move`, data, adminHeaders(adminToken)).then(r => r.data);
+export const deleteTemplateItem = (adminToken, itemId) =>
+  api.delete(`/templates/items/${itemId}`, adminHeaders(adminToken)).then(r => r.data);

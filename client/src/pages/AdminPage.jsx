@@ -1,12 +1,222 @@
 import { useState, useEffect } from 'react';
 import { verifyAdmin, getOverview, getAllUsers, getUserLists, getUserTimelog } from '../api/admin.js';
-import { getTemplates, createTemplate, deleteTemplate, updateTemplate, addTemplateItem } from '../api/templates.js';
+import {
+  getTemplate,
+  getTemplates,
+  createTemplate,
+  deleteTemplate,
+  addTemplateItem,
+  updateTemplateItem,
+  moveTemplateItem,
+  deleteTemplateItem,
+} from '../api/templates.js';
 import { useToast } from '../components/common/Toast.jsx';
-import Loading from '../components/common/Loading.jsx';
 import Modal from '../components/common/Modal.jsx';
 
 function fmt(d) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function buildTemplateTree(items) {
+  const map = {};
+  items.forEach((item) => {
+    map[item.id] = { ...item, children: [] };
+  });
+
+  const roots = [];
+  items.forEach((item) => {
+    if (item.parentId && map[item.parentId]) {
+      map[item.parentId].children.push(map[item.id]);
+    } else {
+      roots.push(map[item.id]);
+    }
+  });
+
+  return roots;
+}
+
+function findNodeWithContext(nodes, id, parent = null) {
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (node.id === id) return { node, parent, index };
+    if (node.children?.length) {
+      const found = findNodeWithContext(node.children, id, node);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function DropZone({ onDrop, depth = 0 }) {
+  return (
+    <div
+      className="list-item-drop-zone"
+      style={{ marginLeft: depth > 0 ? 28 : 0 }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (draggedId) onDrop(draggedId);
+      }}
+    />
+  );
+}
+
+function TemplateItemRow({
+  item,
+  templateType,
+  editMode,
+  onToggleCollapse,
+  onUpdate,
+  onMove,
+  onOutdent,
+  onDelete,
+  onAddChild,
+  depth = 0,
+  parentId = null,
+  index = 0,
+  siblingsCount = 1,
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(item.title);
+  const [editUnit, setEditUnit] = useState(item.unit || '');
+  const hasChildren = item.children && item.children.length > 0;
+  const isCollapsed = !!item.collapsed;
+  const isChecklist = templateType === 'CHECKLIST';
+
+  useEffect(() => {
+    setEditTitle(item.title);
+    setEditUnit(item.unit || '');
+  }, [item.id, item.title, item.unit]);
+
+  async function saveItem() {
+    const nextTitle = editTitle.trim();
+    if (!nextTitle) {
+      setEditTitle(item.title);
+      setEditUnit(item.unit || '');
+      setEditing(false);
+      return;
+    }
+
+    const changed = nextTitle !== item.title || (isChecklist && (editUnit || null) !== (item.unit || null));
+    if (changed) {
+      await onUpdate(item.id, {
+        title: nextTitle,
+        ...(isChecklist ? { unit: editUnit || null } : {}),
+      });
+    }
+
+    setEditing(false);
+  }
+
+  return (
+    <div>
+      {editMode && (
+        <DropZone depth={depth} onDrop={(draggedId) => onMove(draggedId, parentId, index)} />
+      )}
+
+      <div
+        className="list-item-row"
+        draggable={editMode}
+        onDragStart={(e) => {
+          if (!editMode) return;
+          e.dataTransfer.setData('text/plain', item.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragOver={(e) => {
+          if (editMode) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (!editMode) return;
+          e.preventDefault();
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (draggedId && draggedId !== item.id) {
+            onMove(draggedId, item.id, item.children?.length || 0);
+          }
+        }}
+      >
+        {hasChildren ? (
+          <button className="collapse-btn" onClick={() => onToggleCollapse(item)}>
+            {isCollapsed ? '▶' : '▼'}
+          </button>
+        ) : (
+          <span style={{ width: 18 }} />
+        )}
+
+        <div className="list-item-title">
+          {editing ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onBlur={saveItem}
+                onKeyDown={(e) => e.key === 'Enter' && saveItem()}
+                autoFocus
+                style={{ flex: 1, background: 'transparent', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 4, fontSize: 14 }}
+              />
+              {isChecklist && (
+                <input
+                  value={editUnit}
+                  onChange={(e) => setEditUnit(e.target.value)}
+                  onBlur={saveItem}
+                  onKeyDown={(e) => e.key === 'Enter' && saveItem()}
+                  placeholder="Unit"
+                  style={{ width: 100, background: 'transparent', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 4, fontSize: 13 }}
+                />
+              )}
+            </div>
+          ) : (
+            <span onDoubleClick={() => setEditing(true)}>
+              {item.title}
+              {isChecklist && item.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{item.unit}]</span>}
+            </span>
+          )}
+        </div>
+
+        {editMode && (
+          <>
+            <button className="btn-icon" style={{ fontSize: 13 }} onClick={() => onOutdent(item.id)} title="Outdent one level">
+              ⇤
+            </button>
+            <button className="btn-icon" style={{ fontSize: 14 }} onClick={() => onAddChild(item.id)} title="Add sub-item">
+              ⊕
+            </button>
+            <button className="btn-icon" style={{ color: 'var(--red)', fontSize: 14 }} onClick={() => onDelete(item.id)} title="Delete item">
+              ✕
+            </button>
+          </>
+        )}
+      </div>
+
+      {hasChildren && !isCollapsed && (
+        <div className="list-item-children">
+          {item.children.map((child, childIndex) => (
+            <TemplateItemRow
+              key={child.id}
+              item={child}
+              templateType={templateType}
+              editMode={editMode}
+              onToggleCollapse={onToggleCollapse}
+              onUpdate={onUpdate}
+              onMove={onMove}
+              onOutdent={onOutdent}
+              onDelete={onDelete}
+              onAddChild={onAddChild}
+              depth={depth + 1}
+              parentId={item.id}
+              index={childIndex}
+              siblingsCount={item.children.length}
+            />
+          ))}
+        </div>
+      )}
+
+      {editMode && index === siblingsCount - 1 && (
+        <DropZone depth={depth} onDrop={(draggedId) => onMove(draggedId, parentId, siblingsCount)} />
+      )}
+    </div>
+  );
 }
 
 export default function AdminPage() {
@@ -34,6 +244,7 @@ export default function AdminPage() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('');
+  const [templateItemsVersion, setTemplateItemsVersion] = useState(0);
 
   useEffect(() => {
     if (authed) {
@@ -66,6 +277,12 @@ export default function AdminPage() {
   async function loadTemplates() {
     try { setTemplates(await getTemplates()); } catch {}
   }
+
+  useEffect(() => {
+    setNewItemTitle('');
+    setNewItemUnit('');
+    setTemplateItemsVersion(0);
+  }, [selectedTemplate?.id]);
 
   async function selectUser(user) {
     setSelectedUser(user);
@@ -105,11 +322,14 @@ export default function AdminPage() {
   async function handleAddTemplateItem(templateId) {
     if (!newItemTitle.trim()) return;
     try {
-      await addTemplateItem(adminToken, templateId, { title: newItemTitle, unit: newItemUnit || null });
+      const unit = selectedTemplate?.type === 'CHECKLIST' ? (newItemUnit || null) : null;
+      await addTemplateItem(adminToken, templateId, { title: newItemTitle, unit });
       const updated = await getTemplates();
       setTemplates(updated);
+      setSelectedTemplate(current => current ? updated.find(t => t.id === current.id) || current : current);
       setNewItemTitle(''); setNewItemUnit('');
-      toast('Item added — linked lists will sync on next visit');
+      setTemplateItemsVersion(version => version + 1);
+      toast('Item added');
     } catch { toast('Failed', 'error'); }
   }
 
@@ -261,11 +481,18 @@ export default function AdminPage() {
                 </p>
 
                 {/* Template items list — load fresh */}
-                <TemplateItemsList templateId={selectedTemplate.id} adminToken={adminToken} />
+                <TemplateItemsList
+                  adminToken={adminToken}
+                  templateId={selectedTemplate.id}
+                  templateType={selectedTemplate.type}
+                  refreshKey={templateItemsVersion}
+                />
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                   <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" />
-                  <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit" style={{ width: 100 }} />
+                  {selectedTemplate.type === 'CHECKLIST' && (
+                    <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit" style={{ width: 100 }} />
+                  )}
                   <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={() => handleAddTemplateItem(selectedTemplate.id)}>
                     + Add
                   </button>
@@ -307,31 +534,161 @@ export default function AdminPage() {
   );
 }
 
-// Sub-component to load and display template items
-function TemplateItemsList({ templateId, adminToken }) {
-  const [items, setItems] = useState([]);
+function TemplateItemsList({ adminToken, templateId, templateType, refreshKey }) {
   const toast = useToast();
+  const [items, setItems] = useState([]);
+  const [editMode, setEditMode] = useState(false);
+  const [addingChild, setAddingChild] = useState(null);
+  const [newChildTitle, setNewChildTitle] = useState('');
+  const [newChildUnit, setNewChildUnit] = useState('');
 
-  useEffect(() => { loadItems(); }, [templateId]);
+  useEffect(() => {
+    setEditMode(false);
+    setAddingChild(null);
+    setNewChildTitle('');
+    setNewChildUnit('');
+  }, [templateId]);
+
+  useEffect(() => { loadItems(); }, [templateId, refreshKey]);
 
   async function loadItems() {
     try {
-      const { getTemplate } = await import('../api/templates.js');
       const tmpl = await getTemplate(templateId);
       setItems(tmpl.items || []);
-    } catch {}
+    } catch {
+      toast('Failed to load template items', 'error');
+    }
   }
+
+  async function toggleCollapse(item) {
+    try {
+      await updateTemplateItem(adminToken, item.id, { collapsed: !item.collapsed });
+      await loadItems();
+    } catch {
+      toast('Failed to toggle item', 'error');
+    }
+  }
+
+  async function handleUpdateItem(itemId, data) {
+    try {
+      await updateTemplateItem(adminToken, itemId, data);
+      await loadItems();
+    } catch {
+      toast('Failed to update item', 'error');
+    }
+  }
+
+  async function handleMoveItem(itemId, newParentId, newIndex) {
+    try {
+      await moveTemplateItem(adminToken, itemId, { newParentId, newIndex });
+      await loadItems();
+    } catch (error) {
+      toast(error?.response?.data?.error || 'Failed to move item', 'error');
+    }
+  }
+
+  async function handleDeleteItem(itemId) {
+    if (!confirm('Delete this item and its sub-items?')) return;
+
+    try {
+      await deleteTemplateItem(adminToken, itemId);
+      await loadItems();
+    } catch {
+      toast('Failed to delete item', 'error');
+    }
+  }
+
+  async function handleAddChild(parentId) {
+    if (!newChildTitle.trim()) return;
+
+    try {
+      await addTemplateItem(adminToken, templateId, {
+        title: newChildTitle,
+        parentId,
+        unit: templateType === 'CHECKLIST' ? (newChildUnit || null) : null,
+      });
+      setAddingChild(null);
+      setNewChildTitle('');
+      setNewChildUnit('');
+      await loadItems();
+      toast('Item added');
+    } catch {
+      toast('Failed to add item', 'error');
+    }
+  }
+
+  async function handleOutdentItem(itemId) {
+    const ctx = findNodeWithContext(tree, itemId);
+    if (!ctx || !ctx.parent) return;
+
+    const parentCtx = findNodeWithContext(tree, ctx.parent.id);
+    const newParentId = parentCtx?.parent ? parentCtx.parent.id : null;
+    const newIndex = (parentCtx?.index ?? 0) + 1;
+    await handleMoveItem(itemId, newParentId, newIndex);
+  }
+
+  const tree = buildTemplateTree(items);
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button
+          className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
+          onClick={() => setEditMode((current) => !current)}
+        >
+          {editMode ? '✓ Done' : '✎ Edit'}
+        </button>
+      </div>
+
       {items.length === 0 && <p style={{ color: 'var(--text3)', fontSize: 14 }}>No items yet.</p>}
-      {items.map(i => (
-        <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
-          {i.parentId && <span style={{ opacity: 0.4, fontSize: 12 }}>↳</span>}
-          <span style={{ flex: 1 }}>{i.title}</span>
-          {i.unit && <span style={{ fontSize: 12, color: 'var(--text3)' }}>[{i.unit}]</span>}
-        </div>
+
+      {tree.map((item, index) => (
+        <TemplateItemRow
+          key={item.id}
+          item={item}
+          templateType={templateType}
+          editMode={editMode}
+          onToggleCollapse={toggleCollapse}
+          onUpdate={handleUpdateItem}
+          onMove={handleMoveItem}
+          onOutdent={handleOutdentItem}
+          onDelete={handleDeleteItem}
+          onAddChild={(parentId) => {
+            setAddingChild(parentId);
+            setNewChildTitle('');
+            setNewChildUnit('');
+          }}
+          parentId={null}
+          index={index}
+          siblingsCount={tree.length}
+        />
       ))}
+
+      {addingChild && (
+        <Modal
+          title="Add sub-item"
+          onClose={() => setAddingChild(null)}
+          actions={
+            <>
+              <button className="btn btn-secondary" onClick={() => setAddingChild(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => handleAddChild(addingChild)} disabled={!newChildTitle.trim()}>
+                Add
+              </button>
+            </>
+          }
+        >
+          <div className="form-group">
+            <label>Title</label>
+            <input value={newChildTitle} onChange={(e) => setNewChildTitle(e.target.value)} autoFocus placeholder="Sub-item title…" />
+          </div>
+          {templateType === 'CHECKLIST' && (
+            <div className="form-group">
+              <label>Unit (optional)</label>
+              <input value={newChildUnit} onChange={(e) => setNewChildUnit(e.target.value)} placeholder="Unit…" />
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@ function ScoreScalePreview({ score }) {
   return (
     <div className="score-display score-display-readonly" aria-label={`Score ${score ?? 0} out of 10`}>
       {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
-        <span key={value} className={`score-pip score-pip-readonly ${score >= value ? 'filled' : ''}`}>
+        <span key={value} className={`score-pip score-pip-readonly ${score !== null && score !== undefined && score >= value ? 'filled' : ''}`}>
           {value}
         </span>
       ))}

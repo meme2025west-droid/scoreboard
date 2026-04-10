@@ -141,7 +141,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
             {[0,1,2,3,4,5,6,7,8,9,10].map(n => (
               <button
                 key={n}
-                className={`score-pip ${val.score >= n ? 'filled' : ''}`}
+                className={`score-pip ${val.score !== null && val.score !== undefined && val.score >= n ? 'filled' : ''}`}
                 onClick={() => setValue(item.id, 'score', val.score === n ? null : n)}
               >
                 {n}

@@ -170,6 +170,15 @@ router.delete('/:id', async (req, res) => {
 // Add item
 router.post('/:id/items', async (req, res) => {
   try {
+    const list = await prisma.list.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, templateId: true },
+    });
+    if (!list) return res.status(404).json({ error: 'List not found' });
+    if (list.templateId) {
+      return res.status(400).json({ error: 'This list is managed by a template. Ask an admin to update the template.' });
+    }
+
     const { title, parentId, unit } = req.body;
     const maxPos = await prisma.listItem.aggregate({
       where: { listId: req.params.id, parentId: parentId || null },
@@ -189,6 +198,19 @@ router.post('/:id/items', async (req, res) => {
 router.patch('/items/:itemId', async (req, res) => {
   try {
     const { title, unit, collapsed, position, parentId } = req.body;
+    const existing = await prisma.listItem.findUnique({
+      where: { id: req.params.itemId },
+      include: { list: { select: { templateId: true } } },
+    });
+    if (!existing) return res.status(404).json({ error: 'Item not found' });
+
+    const isTemplateLinked = !!existing.list?.templateId;
+    const modifiesStructureOrContent =
+      title !== undefined || unit !== undefined || position !== undefined || parentId !== undefined;
+    if (isTemplateLinked && modifiesStructureOrContent) {
+      return res.status(400).json({ error: 'This list is managed by a template. Ask an admin to update the template.' });
+    }
+
     const item = await prisma.listItem.update({
       where: { id: req.params.itemId },
       data: {
@@ -209,8 +231,14 @@ router.patch('/items/:itemId', async (req, res) => {
 router.post('/items/:itemId/move', async (req, res) => {
   try {
     const { newParentId, newIndex } = req.body;
-    const moving = await prisma.listItem.findUnique({ where: { id: req.params.itemId } });
+    const moving = await prisma.listItem.findUnique({
+      where: { id: req.params.itemId },
+      include: { list: { select: { templateId: true } } },
+    });
     if (!moving) return res.status(404).json({ error: 'Item not found' });
+    if (moving.list?.templateId) {
+      return res.status(400).json({ error: 'This list is managed by a template. Ask an admin to update the template.' });
+    }
 
     const allItems = await prisma.listItem.findMany({
       where: { listId: moving.listId },
@@ -270,6 +298,15 @@ router.post('/items/:itemId/move', async (req, res) => {
 // Delete item
 router.delete('/items/:itemId', async (req, res) => {
   try {
+    const existing = await prisma.listItem.findUnique({
+      where: { id: req.params.itemId },
+      include: { list: { select: { templateId: true } } },
+    });
+    if (!existing) return res.status(404).json({ error: 'Item not found' });
+    if (existing.list?.templateId) {
+      return res.status(400).json({ error: 'This list is managed by a template. Ask an admin to update the template.' });
+    }
+
     await prisma.listItem.delete({ where: { id: req.params.itemId } });
     res.json({ ok: true });
   } catch (e) {

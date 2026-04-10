@@ -213,6 +213,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   if (loading) return <Loading />;
   if (!list) return null;
 
+  const isTemplateLocked = !!list.templateId;
   const isChecklist = list.type === 'CHECKLIST';
   const isScorecard = list.type === 'SCORECARD' || list.type === 'SCOREBOARD';
   const selectType = isScorecard ? 'SCORECARD' : list.type;
@@ -255,13 +256,15 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             {list.templateId && (
               <button className="btn btn-secondary btn-sm" onClick={handleSync} title="Sync from template">↻ Sync</button>
             )}
-            <button
-              className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
-              onClick={() => setEditMode(v => !v)}
-              title={editMode ? 'Stop rearranging' : 'Rearrange items'}
-            >
-              {editMode ? '✓ Done' : '✎ Edit'}
-            </button>
+            {!isTemplateLocked && (
+              <button
+                className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
+                onClick={() => setEditMode(v => !v)}
+                title={editMode ? 'Stop rearranging' : 'Rearrange items'}
+              >
+                {editMode ? '✓ Done' : '✎ Edit'}
+              </button>
+            )}
             <button className="btn btn-secondary btn-sm" onClick={() => setShowHistory(true)}>History</button>
             <button className="btn btn-primary btn-sm" onClick={() => setShowSubmit(true)}>Submit</button>
             <button className="btn-icon" onClick={onDelete} title="Delete list" style={{ color: 'var(--red)' }}>🗑</button>
@@ -269,8 +272,8 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
         </div>
 
         {list.template && (
-          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
-            Template: <strong>{list.template.title}</strong>
+          <div style={{ fontSize: 12, color: 'var(--accent)', background: 'var(--surface2)', border: '1px solid var(--accent)', borderRadius: 6, padding: '6px 10px', marginBottom: 12 }}>
+            This list is managed by template <strong>{list.template.title}</strong>. Ask an admin to update the template to change items.
           </div>
         )}
 
@@ -293,6 +296,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             onOutdent={handleOutdentItem}
             onToggleCollapse={handleToggleCollapse}
             onAddChild={(parentId) => { setAddingItem(parentId); setNewItemTitle(''); setNewItemUnit(''); }}
+            isTemplateLocked={isTemplateLocked}
             parentId={null}
             index={idx}
             siblingsCount={tree.length}
@@ -300,24 +304,26 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
         ))}
 
         {/* Add root item */}
-        {addingItem === 'root' ? (
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleAddItem('root')}
-              style={{ flex: 2 }}
-            />
-            {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />}
-            <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
-          </div>
-        ) : (
-          <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => setAddingItem('root')}>
-            + Add item
-          </button>
+        {!isTemplateLocked && (
+          addingItem === 'root' ? (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" autoFocus
+                onKeyDown={e => e.key === 'Enter' && handleAddItem('root')}
+                style={{ flex: 2 }}
+              />
+              {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />}
+              <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
+            </div>
+          ) : (
+            <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => setAddingItem('root')}>
+              + Add item
+            </button>
+          )
         )}
 
         {/* Adding child items (triggered from row) */}
-        {addingItem && addingItem !== 'root' && (
+        {!isTemplateLocked && addingItem && addingItem !== 'root' && (
           <Modal title="Add sub-item" onClose={() => setAddingItem(null)}
             actions={
               <>

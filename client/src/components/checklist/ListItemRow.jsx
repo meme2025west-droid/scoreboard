@@ -18,7 +18,7 @@ function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   );
 }
 
-export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState }) {
+export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, isTemplateLocked = false, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [showComment, setShowComment] = useState(false);
@@ -169,12 +169,16 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
           <button className="btn-icon" title="Comment" onClick={() => setShowComment(s => !s)} style={{ fontSize: 14 }}>
             💬
           </button>
-          <button className="btn-icon" title="Add sub-item" onClick={() => onAddChild(item.id)} style={{ fontSize: 14 }}>
-            ⊕
-          </button>
-          <button className="btn-icon" title="Delete" onClick={() => onDelete(item.id)} style={{ color: 'var(--red)', fontSize: 14 }}>
-            ✕
-          </button>
+          {!isTemplateLocked && (
+            <button className="btn-icon" title="Add sub-item" onClick={() => onAddChild(item.id)} style={{ fontSize: 14 }}>
+              ⊕
+            </button>
+          )}
+          {!isTemplateLocked && (
+            <button className="btn-icon" title="Delete" onClick={() => onDelete(item.id)} style={{ color: 'var(--red)', fontSize: 14 }}>
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
@@ -207,6 +211,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
               onOutdent={onOutdent}
               onToggleCollapse={onToggleCollapse}
               onAddChild={onAddChild}
+              isTemplateLocked={isTemplateLocked}
               depth={depth + 1}
               parentId={item.id}
               index={childIndex}

@@ -11,16 +11,49 @@ function formatDate(d) {
   });
 }
 
+function ScoreScalePreview({ score }) {
+  return (
+    <div className="score-display score-display-readonly" aria-label={`Score ${score ?? 0} out of 10`}>
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+        <span key={value} className={`score-pip score-pip-readonly ${score >= value ? 'filled' : ''}`}>
+          {value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function SubmissionHistory({ listId, listType, submissions, onClose, onDeleted }) {
   const toast = useToast();
   const [viewed, setViewed] = useState(null);
   const [loadingView, setLoadingView] = useState(false);
+  const [collapsed, setCollapsed] = useState({});
+
+  function buildSubmissionTree(items) {
+    const map = {};
+    items.forEach((si) => {
+      if (!si.item) return;
+      map[si.item.id] = { ...si, children: [] };
+    });
+
+    const roots = [];
+    Object.values(map).forEach((node) => {
+      const parentId = node.item?.parentId || null;
+      if (parentId && map[parentId]) {
+        map[parentId].children.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+    return roots;
+  }
 
   async function openSubmission(id) {
     setLoadingView(true);
     try {
       const data = await getSubmission(id);
       setViewed(data);
+      setCollapsed({});
     } catch {
       toast('Failed to load submission', 'error');
     } finally {
@@ -56,24 +89,15 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
               {viewed.notes}
             </div>
           )}
-          {viewed.items.map(si => (
-            <div key={si.id} className="submission-item-row">
-              <div style={{ fontWeight: 500 }}>{si.item?.title}</div>
-              <div className="submission-item-meta">
-                {listType === 'CHECKLIST' && (
-                  <span style={{ color: si.checked ? 'var(--green)' : 'var(--text3)' }}>
-                    {si.checked ? '✓ Checked' : '○ Unchecked'}
-                  </span>
-                )}
-                {listType === 'SCOREBOARD' && si.score != null && (
-                  <span style={{ color: 'var(--accent)' }}>Score: {si.score}/10</span>
-                )}
-                {si.numberValue != null && (
-                  <span>{si.numberValue} {si.item?.unit || ''}</span>
-                )}
-                {si.comment && <span style={{ fontStyle: 'italic' }}>"{si.comment}"</span>}
-              </div>
-            </div>
+          {buildSubmissionTree(viewed.items || []).map(node => (
+            <SubmissionTreeRow
+              key={node.id}
+              node={node}
+              listType={listType}
+              collapsed={collapsed}
+              setCollapsed={setCollapsed}
+              depth={0}
+            />
           ))}
         </div>
       ) : (
@@ -93,5 +117,62 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
         </div>
       )}
     </Modal>
+  );
+}
+
+function SubmissionTreeRow({ node, listType, collapsed, setCollapsed, depth }) {
+  const hasChildren = (node.children || []).length > 0;
+  const isCollapsed = !!collapsed[node.id];
+  const isScorecard = listType === 'SCORECARD' || listType === 'SCOREBOARD';
+
+  return (
+    <div>
+      <div className="submission-item-row">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: `${depth * 22}px` }}>
+          {hasChildren ? (
+            <button
+              className="collapse-btn"
+              onClick={() => setCollapsed(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
+            >
+              {isCollapsed ? '▶' : '▼'}
+            </button>
+          ) : (
+            <span style={{ width: 18, display: 'inline-block' }} />
+          )}
+          <div style={{ fontWeight: 500 }}>
+            {node.item?.title}
+            {listType === 'CHECKLIST' && node.item?.unit && (
+              <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{node.item.unit}]</span>
+            )}
+          </div>
+        </div>
+
+        <div className="submission-item-meta">
+          {listType === 'CHECKLIST' && (
+            <span style={{ color: node.checked ? 'var(--green)' : 'var(--text3)' }}>
+              {node.checked ? '✓ Checked' : '○ Unchecked'}
+            </span>
+          )}
+          {isScorecard && (
+            <ScoreScalePreview score={node.score} />
+          )}
+          {listType === 'CHECKLIST' && node.numberValue != null && (
+            <span>{node.numberValue} {node.item?.unit || ''}</span>
+          )}
+          {node.comment && <span style={{ fontStyle: 'italic' }}>"{node.comment}"</span>}
+        </div>
+      </div>
+
+      {hasChildren && !isCollapsed && node.children.map(child => (
+        <SubmissionTreeRow
+          key={child.id}
+          node={child}
+          listType={listType}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          depth={depth + 1}
+        />
+      ))}
+    </div>
   );
 }

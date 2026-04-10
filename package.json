@@ -1,5 +1,5 @@
 {
-  "name": "scoreboard",
+  "name": "scorecard",
   "version": "1.0.0",
   "scripts": {
     "dev:server": "cd server && npm run dev",

@@ -97,7 +97,7 @@ export default function ListsTab({ token }) {
             onClick={() => setSelectedId(l.id)}
           >
             <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
-            <span className={`badge badge-${l.type.toLowerCase()}`}>{l.type === 'CHECKLIST' ? '✓' : '★'}</span>
+            <span className={`badge ${l.type === 'CHECKLIST' ? 'badge-checklist' : 'badge-scorecard'}`}>{l.type === 'CHECKLIST' ? '✓' : '★'}</span>
           </button>
         ))}
       </div>
@@ -140,7 +140,7 @@ export default function ListsTab({ token }) {
             <label>Type</label>
             <select value={newType} onChange={e => setNewType(e.target.value)}>
               <option value="CHECKLIST">Checklist</option>
-              <option value="SCOREBOARD">Scoreboard</option>
+              <option value="SCORECARD">Scorecard</option>
             </select>
           </div>
         </Modal>
@@ -157,7 +157,7 @@ export default function ListsTab({ token }) {
             <label>Type</label>
             <select value={newType} onChange={e => setNewType(e.target.value)}>
               <option value="CHECKLIST">Checklist</option>
-              <option value="SCOREBOARD">Scoreboard</option>
+              <option value="SCORECARD">Scorecard</option>
             </select>
           </div>
           <hr className="divider" />

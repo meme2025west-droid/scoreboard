@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { getUser, updateUser } from '../api/users.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Loading from '../components/common/Loading.jsx';
@@ -15,12 +15,15 @@ const TIMEZONES = [
 
 export default function UserPage() {
   const { token } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('lists');
   const [showSettings, setShowSettings] = useState(false);
   const [tz, setTz] = useState('');
+
+  const requestedTab = searchParams.get('tab');
+  const tab = requestedTab === 'timelog' ? 'timelog' : 'lists';
 
   useEffect(() => {
     getUser(token)
@@ -28,6 +31,25 @@ export default function UserPage() {
       .catch(() => toast('Dashboard not found', 'error'))
       .finally(() => setLoading(false));
   }, [token]);
+
+  useEffect(() => {
+    if (!requestedTab) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('tab', 'lists');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [requestedTab, searchParams, setSearchParams]);
+
+  function handleTabChange(nextTab) {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', nextTab);
+    if (nextTab !== 'timelog') {
+      nextParams.delete('timelogView');
+    } else if (!nextParams.get('timelogView')) {
+      nextParams.set('timelogView', 'log');
+    }
+    setSearchParams(nextParams);
+  }
 
   async function saveTimezone() {
     try {
@@ -52,10 +74,10 @@ export default function UserPage() {
   return (
     <div className="app-layout">
       <nav className="nav">
-        <a href="/" className="nav-brand" style={{ textDecoration: 'none' }}>⬡ Scoreboard</a>
+        <a href="/" className="nav-brand" style={{ textDecoration: 'none' }}>⬡ Scorecard</a>
         <div className="nav-tabs">
-          <button className={`nav-tab ${tab === 'lists' ? 'active' : ''}`} onClick={() => setTab('lists')}>Lists</button>
-          <button className={`nav-tab ${tab === 'timelog' ? 'active' : ''}`} onClick={() => setTab('timelog')}>Timelog</button>
+          <button className={`nav-tab ${tab === 'lists' ? 'active' : ''}`} onClick={() => handleTabChange('lists')}>Lists</button>
+          <button className={`nav-tab ${tab === 'timelog' ? 'active' : ''}`} onClick={() => handleTabChange('timelog')}>Timelog</button>
           <button className="nav-tab" onClick={() => setShowSettings(s => !s)} style={{ fontSize: 18, padding: '6px 12px' }}>⚙</button>
         </div>
       </nav>

@@ -3,6 +3,34 @@ import prisma from '../db.js';
 
 const router = Router();
 
+function insertAt(arr, index, value) {
+  const out = [...arr];
+  out.splice(index, 0, value);
+  return out;
+}
+
+function buildChildrenMap(items) {
+  const map = {};
+  for (const item of items) {
+    const key = item.parentId || '__root__';
+    if (!map[key]) map[key] = [];
+    map[key].push(item.id);
+  }
+  return map;
+}
+
+function isDescendant(items, ancestorId, maybeDescendantId) {
+  const childrenMap = buildChildrenMap(items);
+  const stack = [...(childrenMap[ancestorId] || [])];
+  while (stack.length > 0) {
+    const curr = stack.pop();
+    if (curr === maybeDescendantId) return true;
+    const children = childrenMap[curr] || [];
+    for (const c of children) stack.push(c);
+  }
+  return false;
+}
+
 function buildTree(items) {
   const map = {};
   items.forEach(i => { map[i.id] = { ...i, children: [] }; });
@@ -159,6 +187,68 @@ router.patch('/items/:itemId', async (req, res) => {
         ...(parentId !== undefined && { parentId }),
       },
     });
+    res.json(item);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Move/reorder item (drag-drop support)
+router.post('/items/:itemId/move', async (req, res) => {
+  try {
+    const { newParentId, newIndex } = req.body;
+    const moving = await prisma.listItem.findUnique({ where: { id: req.params.itemId } });
+    if (!moving) return res.status(404).json({ error: 'Item not found' });
+
+    const allItems = await prisma.listItem.findMany({
+      where: { listId: moving.listId },
+      select: { id: true, parentId: true, position: true },
+      orderBy: { position: 'asc' },
+    });
+
+    const normalizedParentId = newParentId || null;
+    if (normalizedParentId) {
+      const parent = allItems.find(i => i.id === normalizedParentId);
+      if (!parent) return res.status(400).json({ error: 'New parent not found' });
+      if (parent.id === moving.id) return res.status(400).json({ error: 'Cannot parent item to itself' });
+      if (isDescendant(allItems, moving.id, normalizedParentId)) {
+        return res.status(400).json({ error: 'Cannot move item under its own descendant' });
+      }
+    }
+
+    const oldParentId = moving.parentId || null;
+    const targetSiblings = allItems
+      .filter(i => (i.parentId || null) === normalizedParentId && i.id !== moving.id)
+      .sort((a, b) => a.position - b.position)
+      .map(i => i.id);
+
+    const maxIndex = targetSiblings.length;
+    const safeIndex = Math.max(0, Math.min(Number.isInteger(newIndex) ? newIndex : maxIndex, maxIndex));
+    const newSiblingOrder = insertAt(targetSiblings, safeIndex, moving.id);
+
+    const oldSiblings = allItems
+      .filter(i => (i.parentId || null) === oldParentId && i.id !== moving.id)
+      .sort((a, b) => a.position - b.position)
+      .map(i => i.id);
+
+    await prisma.$transaction(async tx => {
+      await tx.listItem.update({
+        where: { id: moving.id },
+        data: { parentId: normalizedParentId },
+      });
+
+      if (oldParentId !== normalizedParentId) {
+        for (let i = 0; i < oldSiblings.length; i++) {
+          await tx.listItem.update({ where: { id: oldSiblings[i] }, data: { position: i } });
+        }
+      }
+
+      for (let i = 0; i < newSiblingOrder.length; i++) {
+        await tx.listItem.update({ where: { id: newSiblingOrder[i] }, data: { position: i } });
+      }
+    });
+
+    const item = await prisma.listItem.findUnique({ where: { id: moving.id } });
     res.json(item);
   } catch (e) {
     res.status(500).json({ error: e.message });

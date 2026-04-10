@@ -43,7 +43,7 @@ export default function LandingPage() {
   return (
     <div className="app-layout">
       <nav className="nav">
-        <span className="nav-brand">⬡ Scoreboard</span>
+        <span className="nav-brand">⬡ Scorecard</span>
       </nav>
       <div className="page-content">
         <div className="landing">

@@ -115,7 +115,7 @@ export default function AdminPage() {
 
   if (!authed) return (
     <div className="app-layout">
-      <nav className="nav"><span className="nav-brand">⬡ Scoreboard — Admin</span></nav>
+      <nav className="nav"><span className="nav-brand">⬡ Scorecard — Admin</span></nav>
       <div className="page-content">
         <div className="landing">
           <div>
@@ -293,7 +293,7 @@ export default function AdminPage() {
             <label>Type</label>
             <select value={newTmplType} onChange={e => setNewTmplType(e.target.value)}>
               <option value="CHECKLIST">Checklist</option>
-              <option value="SCOREBOARD">Scoreboard</option>
+              <option value="SCORECARD">Scorecard</option>
               <option value="TIMELOG">Timelog Project Set</option>
             </select>
           </div>

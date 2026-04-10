@@ -14,6 +14,7 @@ model User {
   createdAt DateTime @default(now())
 
   lists          List[]
+  effortLogs     EffortLog[]
   timelogEntries TimelogEntry[]
   projects       Project[]
 }
@@ -117,11 +118,25 @@ model Project {
   parentId          String?
   color             String?
   position          Int     @default(0)
+  starred           Boolean @default(false)
 
+  effortLogs     EffortLog[]
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent         Project?       @relation("ProjChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   children       Project[]      @relation("ProjChildren")
   timelogEntries TimelogEntry[]
+}
+
+model EffortLog {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String
+  comment     String?
+  loggedAt    DateTime
+  submittedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id])
 }
 
 model TimelogEntry {

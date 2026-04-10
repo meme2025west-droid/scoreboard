@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getList, updateList, addListItem, updateListItem, deleteListItem, syncListFromTemplate } from '../../api/lists.js';
+import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, syncListFromTemplate } from '../../api/lists.js';
 import { submitList, getSubmissions } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
@@ -18,6 +18,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   const [submitting, setSubmitting] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [titleVal, setTitleVal] = useState('');
   const [addingItem, setAddingItem] = useState(null); // parentId or 'root'
   const [newItemTitle, setNewItemTitle] = useState('');
@@ -58,16 +59,28 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
     setValues(v => ({ ...v, [itemId]: { ...v[itemId], [field]: val } }));
   }
 
+  function toggleCollapsedInTree(nodes, itemId) {
+    return nodes.map((n) => {
+      if (n.id === itemId) {
+        return { ...n, collapsed: !n.collapsed };
+      }
+      if (n.children?.length) {
+        return { ...n, children: toggleCollapsedInTree(n.children, itemId) };
+      }
+      return n;
+    });
+  }
+
   async function handleSubmit() {
     setSubmitting(true);
     try {
       const allItems = list.items || [];
       const items = allItems.map(i => ({
         itemId: i.id,
-        checked: list.type === 'CHECKLIST' ? (values[i.id]?.checked ?? false) : null,
-        score: list.type === 'SCOREBOARD' ? (values[i.id]?.score ?? null) : null,
+        checked: isChecklist ? (values[i.id]?.checked ?? false) : null,
+        score: isScorecard ? (values[i.id]?.score ?? null) : null,
         comment: values[i.id]?.comment || null,
-        numberValue: values[i.id]?.numberValue !== '' ? parseFloat(values[i.id]?.numberValue) : null,
+        numberValue: isChecklist && values[i.id]?.numberValue !== '' ? parseFloat(values[i.id]?.numberValue) : null,
       }));
       await submitList({ listId, notes: submitNotes, items });
       toast('Submitted!');
@@ -97,7 +110,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
       const item = await addListItem(listId, {
         title: newItemTitle,
         parentId: parentId === 'root' ? null : parentId,
-        unit: newItemUnit || null,
+        unit: isChecklist ? (newItemUnit || null) : null,
       });
       setValues(v => ({ ...v, [item.id]: { checked: false, score: null, comment: '', numberValue: '' } }));
       setAddingItem(null);
@@ -122,8 +135,54 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleToggleCollapse(item) {
-    await updateListItem(item.id, { collapsed: !item.collapsed });
-    loadList();
+    // Optimistically update local UI so collapse/expand feels instant.
+    setList((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items?.map((it) => it.id === item.id ? { ...it, collapsed: !it.collapsed } : it),
+        itemsTree: toggleCollapsedInTree(prev.itemsTree || [], item.id),
+      };
+    });
+
+    try {
+      await updateListItem(item.id, { collapsed: !item.collapsed });
+    } catch {
+      toast('Failed to toggle item', 'error');
+      loadList();
+    }
+  }
+
+  async function handleMoveItem(itemId, newParentId, newIndex) {
+    try {
+      await moveListItem(itemId, { newParentId, newIndex });
+      loadList();
+    } catch {
+      toast('Failed to move item', 'error');
+    }
+  }
+
+  function findNodeWithContext(nodes, id, parent = null) {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      if (node.id === id) return { node, parent, index: i };
+      if (node.children?.length) {
+        const found = findNodeWithContext(node.children, id, node);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  async function handleOutdentItem(itemId) {
+    const root = list?.itemsTree || [];
+    const ctx = findNodeWithContext(root, itemId);
+    if (!ctx || !ctx.parent) return;
+
+    const parentCtx = findNodeWithContext(root, ctx.parent.id);
+    const newParentId = parentCtx?.parent ? parentCtx.parent.id : null;
+    const newIndex = (parentCtx?.index ?? 0) + 1;
+    await handleMoveItem(itemId, newParentId, newIndex);
   }
 
   async function handleSync() {
@@ -145,6 +204,10 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
 
   if (loading) return <Loading />;
   if (!list) return null;
+
+  const isChecklist = list.type === 'CHECKLIST';
+  const isScorecard = list.type === 'SCORECARD' || list.type === 'SCOREBOARD';
+  const selectType = isScorecard ? 'SCORECARD' : list.type;
 
   const tree = list.itemsTree || [];
 
@@ -169,18 +232,25 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
               </h2>
             )}
             <select
-              value={list.type}
+              value={selectType}
               onChange={e => handleTypeChange(e.target.value)}
               style={{ width: 'auto', fontSize: 12, padding: '3px 8px' }}
             >
               <option value="CHECKLIST">Checklist</option>
-              <option value="SCOREBOARD">Scoreboard</option>
+              <option value="SCORECARD">Scorecard</option>
             </select>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {list.templateId && (
               <button className="btn btn-secondary btn-sm" onClick={handleSync} title="Sync from template">↻ Sync</button>
             )}
+            <button
+              className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
+              onClick={() => setEditMode(v => !v)}
+              title={editMode ? 'Stop rearranging' : 'Rearrange items'}
+            >
+              {editMode ? '✓ Done' : '✎ Edit'}
+            </button>
             <button className="btn btn-secondary btn-sm" onClick={() => setShowHistory(true)}>History</button>
             <button className="btn btn-primary btn-sm" onClick={() => setShowSubmit(true)}>Submit</button>
             <button className="btn-icon" onClick={onDelete} title="Delete list" style={{ color: 'var(--red)' }}>🗑</button>
@@ -198,17 +268,23 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
           <div className="empty" style={{ padding: '20px 0' }}><p>No items yet. Add your first item below.</p></div>
         )}
 
-        {tree.map(item => (
+        {tree.map((item, idx) => (
           <ListItemRow
             key={item.id}
             item={item}
             type={list.type}
+            editMode={editMode}
             values={values}
             setValue={setValue}
             onDelete={handleDeleteItem}
             onUpdate={handleUpdateItem}
+            onMove={handleMoveItem}
+            onOutdent={handleOutdentItem}
             onToggleCollapse={handleToggleCollapse}
             onAddChild={(parentId) => { setAddingItem(parentId); setNewItemTitle(''); setNewItemUnit(''); }}
+            parentId={null}
+            index={idx}
+            siblingsCount={tree.length}
           />
         ))}
 
@@ -219,7 +295,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
               onKeyDown={e => e.key === 'Enter' && handleAddItem('root')}
               style={{ flex: 2 }}
             />
-            <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />
+            {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />}
             <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
             <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
           </div>
@@ -243,10 +319,12 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
               <label>Title</label>
               <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} autoFocus placeholder="Sub-item title…" />
             </div>
-            <div className="form-group">
-              <label>Unit (optional, e.g. "kg", "reps")</label>
-              <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit…" />
-            </div>
+            {isChecklist && (
+              <div className="form-group">
+                <label>Unit (optional, e.g. "kg", "reps")</label>
+                <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit…" />
+              </div>
+            )}
           </Modal>
         )}
       </div>
@@ -254,7 +332,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
       {/* Submit modal */}
       {showSubmit && (
         <Modal
-          title={`Submit ${list.type === 'CHECKLIST' ? 'checklist' : 'scoreboard'}`}
+          title={`Submit ${isChecklist ? 'checklist' : 'scorecard'}`}
           onClose={() => setShowSubmit(false)}
           actions={
             <>

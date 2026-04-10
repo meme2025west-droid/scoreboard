@@ -169,16 +169,12 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
           <button className="btn-icon" title="Comment" onClick={() => setShowComment(s => !s)} style={{ fontSize: 14 }}>
             💬
           </button>
-          {!isTemplateLocked && (
-            <button className="btn-icon" title="Add sub-item" onClick={() => onAddChild(item.id)} style={{ fontSize: 14 }}>
-              ⊕
-            </button>
-          )}
-          {!isTemplateLocked && (
-            <button className="btn-icon" title="Delete" onClick={() => onDelete(item.id)} style={{ color: 'var(--red)', fontSize: 14 }}>
-              ✕
-            </button>
-          )}
+          <button className="btn-icon" title="Add sub-item" onClick={() => onAddChild(item.id)} style={{ fontSize: 14 }}>
+            ⊕
+          </button>
+          <button className="btn-icon" title="Delete" onClick={() => onDelete(item.id)} style={{ color: 'var(--red)', fontSize: 14 }}>
+            ✕
+          </button>
         </div>
       </div>
 

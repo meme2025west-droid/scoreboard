@@ -200,6 +200,83 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Duplicate a template-linked list into an editable, unlinked copy
+router.post('/:id/duplicate-detached', async (req, res) => {
+  try {
+    const source = await prisma.list.findUnique({
+      where: { id: req.params.id },
+      include: {
+        items: {
+          orderBy: [
+            { position: 'asc' },
+            { id: 'asc' },
+          ],
+        },
+      },
+    });
+    if (!source) return res.status(404).json({ error: 'List not found' });
+    if (!source.templateId) {
+      return res.status(400).json({ error: 'List is not linked to a template' });
+    }
+
+    const duplicated = await prisma.$transaction(async (tx) => {
+      await tx.list.updateMany({
+        where: {
+          userId: source.userId,
+          parentId: source.parentId,
+          position: { gt: source.position },
+        },
+        data: { position: { increment: 1 } },
+      });
+
+      const copy = await tx.list.create({
+        data: {
+          userId: source.userId,
+          parentId: source.parentId,
+          title: `${source.title} (Custom)`,
+          type: source.type,
+          position: source.position + 1,
+          templateId: null,
+        },
+      });
+
+      const itemIdMap = {};
+      for (const srcItem of source.items) {
+        const created = await tx.listItem.create({
+          data: {
+            listId: copy.id,
+            title: srcItem.title,
+            position: srcItem.position,
+            unit: srcItem.unit,
+            collapsed: srcItem.collapsed,
+            parentId: null,
+          },
+        });
+        itemIdMap[srcItem.id] = created.id;
+      }
+
+      for (const srcItem of source.items) {
+        if (srcItem.parentId && itemIdMap[srcItem.parentId]) {
+          await tx.listItem.update({
+            where: { id: itemIdMap[srcItem.id] },
+            data: { parentId: itemIdMap[srcItem.parentId] },
+          });
+        }
+      }
+
+      return copy;
+    });
+
+    const list = await prisma.list.findUnique({
+      where: { id: duplicated.id },
+      include: { template: { select: { id: true, title: true } } },
+    });
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Move/reorder list in a user's sidebar
 router.post('/:id/move', async (req, res) => {
   try {

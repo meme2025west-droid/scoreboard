@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, syncListFromTemplate } from '../../api/lists.js';
+import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, syncListFromTemplate, duplicateDetachedList } from '../../api/lists.js';
 import { submitList, getSubmissions } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
@@ -7,7 +7,7 @@ import Modal from '../common/Modal.jsx';
 import SubmissionHistory from './SubmissionHistory.jsx';
 import ListItemRow from './ListItemRow.jsx';
 
-export default function ListDetail({ listId, onDelete, onUpdate }) {
+export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }) {
   const toast = useToast();
   const [list, setList] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -71,6 +71,27 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
     });
   }
 
+  async function ensureDetachedForEdit(actionLabel = 'make changes') {
+    if (!list?.templateId) return true;
+
+    const templateName = list.template?.title || 'this template';
+    const confirmed = confirm(
+      `This list is synced from ${templateName}. To ${actionLabel}, create an editable copy and stop syncing with the template?`
+    );
+    if (!confirmed) return false;
+
+    try {
+      const duplicated = await duplicateDetachedList(list.id);
+      toast('Created editable copy. It no longer syncs with template updates.');
+      await onReplaceList?.(duplicated, list.id);
+      return false;
+    } catch (error) {
+      const message = error?.response?.data?.error || 'Failed to create editable copy';
+      toast(message, 'error');
+      return false;
+    }
+  }
+
   async function handleSubmit() {
     setSubmitting(true);
     try {
@@ -96,6 +117,11 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
 
   async function saveTitle() {
     if (!titleVal.trim()) return;
+    if (!(await ensureDetachedForEdit('rename this list'))) {
+      setEditingTitle(false);
+      setTitleVal(list?.title || '');
+      return;
+    }
     try {
       const updated = await updateList(listId, { title: titleVal });
       setList(l => ({ ...l, title: updated.title }));
@@ -106,6 +132,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
 
   async function handleAddItem(parentId) {
     if (!newItemTitle.trim()) return;
+    if (!(await ensureDetachedForEdit('add items'))) return;
     try {
       const item = await addListItem(listId, {
         title: newItemTitle,
@@ -121,6 +148,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleDeleteItem(itemId) {
+    if (!(await ensureDetachedForEdit('delete items'))) return;
     try {
       await deleteListItem(itemId);
       loadList();
@@ -128,6 +156,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleUpdateItem(itemId, data) {
+    if (!(await ensureDetachedForEdit('edit items'))) return;
     try {
       await updateListItem(itemId, data);
       loadList();
@@ -154,6 +183,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleMoveItem(itemId, newParentId, newIndex) {
+    if (!(await ensureDetachedForEdit('reorder items'))) return;
     try {
       await moveListItem(itemId, { newParentId, newIndex });
       loadList();
@@ -195,15 +225,12 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleTypeChange(newType) {
-    if (isTemplateLocked) {
-      toast('Type is managed by template. Ask an admin to update the template.', 'error');
-      return;
-    }
-
     if (hasSubmissions) {
       toast('Type cannot change after submissions exist', 'error');
       return;
     }
+
+    if (!(await ensureDetachedForEdit('change list type'))) return;
 
     try {
       await updateList(listId, { type: newType });
@@ -225,6 +252,22 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   const hasSubmissions = submissions.length > 0;
 
   const tree = list.itemsTree || [];
+
+  async function handleToggleEditMode() {
+    if (editMode) {
+      setEditMode(false);
+      return;
+    }
+    if (!(await ensureDetachedForEdit('reorder items'))) return;
+    setEditMode(true);
+  }
+
+  async function handleStartAddItem(parentId) {
+    if (!(await ensureDetachedForEdit('add items'))) return;
+    setAddingItem(parentId);
+    setNewItemTitle('');
+    setNewItemUnit('');
+  }
 
   return (
     <div>
@@ -249,9 +292,9 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             <select
               value={selectType}
               onChange={e => handleTypeChange(e.target.value)}
-              disabled={hasSubmissions || isTemplateLocked}
+              disabled={hasSubmissions}
               style={{ width: 'auto', fontSize: 12, padding: '3px 8px' }}
-              title={isTemplateLocked ? 'Type is locked because this list is linked to a template' : (hasSubmissions ? 'Type is locked because this list already has submissions' : 'Change list type')}
+              title={hasSubmissions ? 'Type is locked because this list already has submissions' : 'Change list type'}
             >
               <option value="CHECKLIST">Checklist</option>
               <option value="SCORECARD">Scorecard</option>
@@ -261,15 +304,13 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             {list.templateId && (
               <button className="btn btn-secondary btn-sm" onClick={handleSync} title="Sync from template">↻ Sync</button>
             )}
-            {!isTemplateLocked && (
-              <button
-                className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
-                onClick={() => setEditMode(v => !v)}
-                title={editMode ? 'Stop rearranging' : 'Rearrange items'}
-              >
-                {editMode ? '✓ Done' : '✎ Edit'}
-              </button>
-            )}
+            <button
+              className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
+              onClick={handleToggleEditMode}
+              title={editMode ? 'Stop rearranging' : 'Rearrange items'}
+            >
+              {editMode ? '✓ Done' : '✎ Edit'}
+            </button>
             <button className="btn btn-secondary btn-sm" onClick={() => setShowHistory(true)}>History</button>
             <button className="btn btn-primary btn-sm" onClick={() => setShowSubmit(true)}>Submit</button>
             <button className="btn-icon" onClick={onDelete} title="Delete list" style={{ color: 'var(--red)' }}>🗑</button>
@@ -278,7 +319,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
 
         {list.template && (
           <div style={{ fontSize: 12, color: 'var(--accent)', background: 'var(--surface2)', border: '1px solid var(--accent)', borderRadius: 6, padding: '6px 10px', marginBottom: 12 }}>
-            This list is managed by template <strong>{list.template.title}</strong>. Ask an admin to update the template to change items.
+            Synced with template <strong>{list.template.title}</strong>. If you edit this list, you will be asked to create a detached editable copy.
           </div>
         )}
 
@@ -300,7 +341,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             onMove={handleMoveItem}
             onOutdent={handleOutdentItem}
             onToggleCollapse={handleToggleCollapse}
-            onAddChild={(parentId) => { setAddingItem(parentId); setNewItemTitle(''); setNewItemUnit(''); }}
+            onAddChild={handleStartAddItem}
             isTemplateLocked={isTemplateLocked}
             parentId={null}
             index={idx}
@@ -309,26 +350,24 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
         ))}
 
         {/* Add root item */}
-        {!isTemplateLocked && (
-          addingItem === 'root' ? (
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" autoFocus
-                onKeyDown={e => e.key === 'Enter' && handleAddItem('root')}
-                style={{ flex: 2 }}
-              />
-              {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />}
-              <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
-            </div>
-          ) : (
-            <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => setAddingItem('root')}>
-              + Add item
-            </button>
-          )
+        {addingItem === 'root' ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleAddItem('root')}
+              style={{ flex: 2 }}
+            />
+            {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />}
+            <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
+          </div>
+        ) : (
+          <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => handleStartAddItem('root')}>
+            + Add item
+          </button>
         )}
 
         {/* Adding child items (triggered from row) */}
-        {!isTemplateLocked && addingItem && addingItem !== 'root' && (
+        {addingItem && addingItem !== 'root' && (
           <Modal title="Add sub-item" onClose={() => setAddingItem(null)}
             actions={
               <>

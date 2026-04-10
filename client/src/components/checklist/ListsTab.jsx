@@ -129,6 +129,12 @@ export default function ListsTab({ token }) {
     }
   }
 
+  async function handleReplaceList(duplicatedList) {
+    if (!duplicatedList?.id) return;
+    await load(false);
+    setSelectedId(duplicatedList.id);
+  }
+
   async function handleOutdentList(listId) {
     const list = lists.find((x) => x.id === listId);
     if (!list?.parentId) return;
@@ -285,6 +291,7 @@ export default function ListsTab({ token }) {
             listId={selected.id}
             onDelete={() => handleDelete(selected.id)}
             onUpdate={(updated) => setLists(l => l.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+            onReplaceList={handleReplaceList}
           />
         ) : (
           <div className="card">

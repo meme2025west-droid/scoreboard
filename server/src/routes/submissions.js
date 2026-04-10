@@ -3,6 +3,23 @@ import prisma from '../db.js';
 
 const router = Router();
 
+function startOfDay(dateValue) {
+  const date = new Date(dateValue);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function endOfDay(dateValue) {
+  const date = new Date(dateValue);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function daysInclusive(fromDate, toDate) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.floor((endOfDay(toDate) - startOfDay(fromDate)) / msPerDay) + 1);
+}
+
 // Submit a list (create snapshot)
 router.post('/', async (req, res) => {
   try {
@@ -39,6 +56,62 @@ router.get('/list/:listId', async (req, res) => {
       select: { id: true, submittedAt: true, notes: true },
     });
     res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Checklist analytics for a list in a date range
+router.get('/list/:listId/analytics', async (req, res) => {
+  try {
+    const list = await prisma.list.findUnique({
+      where: { id: req.params.listId },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+      },
+    });
+    if (!list) return res.status(404).json({ error: 'List not found' });
+
+    const { from, to } = req.query;
+    const fromDate = from ? startOfDay(from) : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const toDate = to ? endOfDay(to) : endOfDay(new Date());
+
+    const submissions = await prisma.submission.findMany({
+      where: {
+        listId: req.params.listId,
+        submittedAt: {
+          gte: fromDate,
+          lte: toDate,
+        },
+      },
+      include: {
+        items: true,
+      },
+      orderBy: { submittedAt: 'desc' },
+    });
+
+    const checkedDaysByItemId = {};
+    for (const submission of submissions) {
+      const dayKey = submission.submittedAt.toISOString().slice(0, 10);
+      for (const item of submission.items) {
+        if (!item.checked) continue;
+        if (!checkedDaysByItemId[item.itemId]) checkedDaysByItemId[item.itemId] = new Set();
+        checkedDaysByItemId[item.itemId].add(dayKey);
+      }
+    }
+
+    res.json({
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      rangeDays: daysInclusive(fromDate, toDate),
+      items: list.items.map((item) => ({
+        id: item.id,
+        parentId: item.parentId,
+        title: item.title,
+        unit: item.unit,
+        checkedDays: checkedDaysByItemId[item.id]?.size || 0,
+      })),
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

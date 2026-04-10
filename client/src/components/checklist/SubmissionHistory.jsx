@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { getSubmission, deleteSubmission } from '../../api/submissions.js';
+import { useEffect, useState } from 'react';
+import { getSubmission, getSubmissionAnalytics, deleteSubmission } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
 import Modal from '../common/Modal.jsx';
 import Loading from '../common/Loading.jsx';
@@ -23,11 +23,43 @@ function ScoreScalePreview({ score }) {
   );
 }
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function fifteenDaysAgoStr() {
+  const date = new Date();
+  date.setDate(date.getDate() - 14);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildItemTree(items) {
+  const map = {};
+  items.forEach((item) => {
+    map[item.id] = { ...item, children: [] };
+  });
+
+  const roots = [];
+  Object.values(map).forEach((node) => {
+    if (node.parentId && map[node.parentId]) {
+      map[node.parentId].children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+}
+
 export default function SubmissionHistory({ listId, listType, submissions, onClose, onDeleted }) {
   const toast = useToast();
   const [viewed, setViewed] = useState(null);
   const [loadingView, setLoadingView] = useState(false);
   const [collapsed, setCollapsed] = useState({});
+  const [mode, setMode] = useState(listType === 'CHECKLIST' ? 'analytics' : 'history');
+  const [from, setFrom] = useState(fifteenDaysAgoStr());
+  const [to, setTo] = useState(todayStr());
+  const [analytics, setAnalytics] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   function buildSubmissionTree(items) {
     const map = {};
@@ -46,6 +78,23 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
       }
     });
     return roots;
+  }
+
+  useEffect(() => {
+    if (listType !== 'CHECKLIST') return;
+    loadAnalytics(from, to);
+  }, [listId]);
+
+  async function loadAnalytics(fromValue, toValue) {
+    setLoadingAnalytics(true);
+    try {
+      const data = await getSubmissionAnalytics(listId, { from: fromValue, to: toValue });
+      setAnalytics(data);
+    } catch {
+      toast('Failed to load checklist analytics', 'error');
+    } finally {
+      setLoadingAnalytics(false);
+    }
   }
 
   async function openSubmission(id) {
@@ -102,6 +151,44 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
         </div>
       ) : (
         <div>
+          {listType === 'CHECKLIST' && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button className={`btn btn-secondary btn-sm ${mode === 'analytics' ? 'active-edit-btn' : ''}`} onClick={() => setMode('analytics')}>Analytics</button>
+              <button className={`btn btn-secondary btn-sm ${mode === 'history' ? 'active-edit-btn' : ''}`} onClick={() => setMode('history')}>History</button>
+            </div>
+          )}
+
+          {listType === 'CHECKLIST' && mode === 'analytics' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>From</label>
+                  <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 160 }} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>To</label>
+                  <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 160 }} />
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={() => loadAnalytics(from, to)} style={{ height: 38 }}>Apply</button>
+              </div>
+              {loadingAnalytics && <Loading text="Loading analytics…" />}
+              {!loadingAnalytics && analytics && (
+                <div>
+                  <div className="checklist-analytics-summary">
+                    Showing how many days each checklist item was checked in the selected range.
+                  </div>
+                  <div className="checklist-analytics-list">
+                    {buildItemTree(analytics.items || []).map((node) => (
+                      <ChecklistAnalyticsRow key={node.id} node={node} rangeDays={analytics.rangeDays} depth={0} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(listType !== 'CHECKLIST' || mode === 'history') && (
+            <>
           {submissions.length === 0 && (
             <p style={{ color: 'var(--text3)', fontSize: 14 }}>No submissions yet.</p>
           )}
@@ -114,9 +201,29 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
               </li>
             ))}
           </ul>
+            </>
+          )}
         </div>
       )}
     </Modal>
+  );
+}
+
+function ChecklistAnalyticsRow({ node, rangeDays, depth }) {
+  return (
+    <div className="checklist-analytics-row">
+      <div style={{ paddingLeft: `${depth * 22}px`, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span style={{ width: 18, display: 'inline-block' }} />
+        <span style={{ fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {node.title}
+          {node.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{node.unit}]</span>}
+        </span>
+      </div>
+      <div className="checklist-analytics-count">{node.checkedDays}/{rangeDays}</div>
+      {node.children?.length > 0 && node.children.map((child) => (
+        <ChecklistAnalyticsRow key={child.id} node={child} rangeDays={rangeDays} depth={depth + 1} />
+      ))}
+    </div>
   );
 }
 

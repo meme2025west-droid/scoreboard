@@ -195,11 +195,19 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleTypeChange(newType) {
+    if (hasSubmissions) {
+      toast('Type cannot change after submissions exist', 'error');
+      return;
+    }
+
     try {
       await updateList(listId, { type: newType });
       setList(l => ({ ...l, type: newType }));
       onUpdate({ id: listId, type: newType });
-    } catch { toast('Failed to update type', 'error'); }
+    } catch (error) {
+      const message = error?.response?.data?.error || 'Failed to update type';
+      toast(message, 'error');
+    }
   }
 
   if (loading) return <Loading />;
@@ -208,6 +216,7 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   const isChecklist = list.type === 'CHECKLIST';
   const isScorecard = list.type === 'SCORECARD' || list.type === 'SCOREBOARD';
   const selectType = isScorecard ? 'SCORECARD' : list.type;
+  const hasSubmissions = submissions.length > 0;
 
   const tree = list.itemsTree || [];
 
@@ -234,7 +243,9 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             <select
               value={selectType}
               onChange={e => handleTypeChange(e.target.value)}
+              disabled={hasSubmissions}
               style={{ width: 'auto', fontSize: 12, padding: '3px 8px' }}
+              title={hasSubmissions ? 'Type is locked because this list already has submissions' : 'Change list type'}
             >
               <option value="CHECKLIST">Checklist</option>
               <option value="SCORECARD">Scorecard</option>

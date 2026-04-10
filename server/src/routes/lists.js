@@ -133,6 +133,18 @@ router.post('/user/:token', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const { title, type } = req.body;
+    const existingList = await prisma.list.findUnique({
+      where: { id: req.params.id },
+      include: {
+        _count: { select: { submissions: true } },
+      },
+    });
+    if (!existingList) return res.status(404).json({ error: 'List not found' });
+
+    if (type && type !== existingList.type && existingList._count.submissions > 0) {
+      return res.status(400).json({ error: 'Cannot change list type after submissions exist' });
+    }
+
     const list = await prisma.list.update({
       where: { id: req.params.id },
       data: { ...(title && { title }), ...(type && { type }) },

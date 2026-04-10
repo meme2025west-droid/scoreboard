@@ -1,9 +1,14 @@
-function DropZone({ onDrop, depth = 0 }) {
+import { useState } from 'react';
+
+function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
     <div
-      className="project-drop-zone"
+      className={`project-drop-zone ${isActive ? 'active' : ''}`}
       style={{ marginLeft: depth > 0 ? 18 : 0 }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver?.(e);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         const draggedId = e.dataTransfer.getData('text/plain');
@@ -47,25 +52,52 @@ export default function ProjectTree({
   tallyCounts = {},
   depth = 0,
   parentId = null,
+  dragState: sharedDragState,
+  setDragState: setSharedDragState,
 }) {
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const dragState = sharedDragState || localDragState;
+  const setDragState = setSharedDragState || setLocalDragState;
+
   if (!nodes || nodes.length === 0) return null;
   return (
     <div style={depth > 0 ? { paddingLeft: 16 } : {}}>
-      {nodes.map((n, idx) => (
-        <div key={n.id}>
+      {nodes.map((n, idx) => {
+        const beforeZoneKey = `zone:${parentId ?? 'root'}:${idx}`;
+        const nodeDropKey = `node:${n.id}`;
+        const afterZoneKey = `zone:${parentId ?? 'root'}:${nodes.length}`;
+
+        return (
+          <div key={n.id}>
           <DropZone
             depth={depth}
-            onDrop={(draggedId) => onMove(draggedId, parentId, idx)}
+            isActive={dragState.draggedId && dragState.dropTargetKey === beforeZoneKey}
+            onDragOver={() => {
+              if (dragState.dropTargetKey !== beforeZoneKey) {
+                setDragState((prev) => ({ ...prev, dropTargetKey: beforeZoneKey }));
+              }
+            }}
+            onDrop={(draggedId) => {
+              onMove(draggedId, parentId, idx);
+              setDragState({ draggedId: null, dropTargetKey: null });
+            }}
           />
           <div
-            className={`project-node ${selected?.id === n.id ? 'selected' : ''}`}
+            className={`project-node ${selected?.id === n.id ? 'selected' : ''} ${dragState.draggedId && dragState.draggedId !== n.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
             onClick={() => onSelect(n)}
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', n.id);
               e.dataTransfer.effectAllowed = 'move';
+              setDragState({ draggedId: n.id, dropTargetKey: null });
             }}
-            onDragOver={(e) => e.preventDefault()}
+            onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (dragState.dropTargetKey !== nodeDropKey) {
+                setDragState((prev) => ({ ...prev, dropTargetKey: nodeDropKey }));
+              }
+            }}
             onDrop={(e) => {
               e.preventDefault();
               const draggedId = e.dataTransfer.getData('text/plain');
@@ -73,6 +105,7 @@ export default function ProjectTree({
                 const childCount = n.children?.length || 0;
                 onMove(draggedId, n.id, childCount);
               }
+              setDragState({ draggedId: null, dropTargetKey: null });
             }}
           >
             <span
@@ -129,16 +162,28 @@ export default function ProjectTree({
               tallyCounts={tallyCounts}
               depth={depth + 1}
               parentId={n.id}
+              dragState={dragState}
+              setDragState={setDragState}
             />
           )}
           {idx === nodes.length - 1 && (
             <DropZone
               depth={depth}
-              onDrop={(draggedId) => onMove(draggedId, parentId, nodes.length)}
+              isActive={dragState.draggedId && dragState.dropTargetKey === afterZoneKey}
+              onDragOver={() => {
+                if (dragState.dropTargetKey !== afterZoneKey) {
+                  setDragState((prev) => ({ ...prev, dropTargetKey: afterZoneKey }));
+                }
+              }}
+              onDrop={(draggedId) => {
+                onMove(draggedId, parentId, nodes.length);
+                setDragState({ draggedId: null, dropTargetKey: null });
+              }}
             />
           )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

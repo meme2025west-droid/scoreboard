@@ -1,11 +1,14 @@
 import { useState } from 'react';
 
-function DropZone({ onDrop, depth = 0 }) {
+function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
     <div
-      className="list-item-drop-zone"
+      className={`list-item-drop-zone ${isActive ? 'active' : ''}`}
       style={{ marginLeft: depth > 0 ? 28 : 0 }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver?.(e);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         const draggedId = e.dataTransfer.getData('text/plain');
@@ -15,14 +18,20 @@ function DropZone({ onDrop, depth = 0 }) {
   );
 }
 
-export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, depth = 0, parentId = null, index = 0, siblingsCount = 1 }) {
+export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [showComment, setShowComment] = useState(false);
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const dragState = sharedDragState || localDragState;
+  const setDragState = setSharedDragState || setLocalDragState;
   const val = values[item.id] || { checked: false, score: null, comment: '', numberValue: '' };
   const hasChildren = item.children && item.children.length > 0;
   const isChecklist = type === 'CHECKLIST';
   const isScorecard = type === 'SCORECARD' || type === 'SCOREBOARD';
+  const beforeZoneKey = `zone:${parentId ?? 'root'}:${index}`;
+  const nodeDropKey = `node:${item.id}`;
+  const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
 
   function saveTitle() {
     if (editTitle.trim() && editTitle !== item.title) {
@@ -34,19 +43,38 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   return (
     <div>
       {editMode && (
-        <DropZone depth={depth} onDrop={(draggedId) => onMove(draggedId, parentId, index)} />
+        <DropZone
+          depth={depth}
+          isActive={dragState.draggedId && dragState.dropTargetKey === beforeZoneKey}
+          onDragOver={() => {
+            if (dragState.dropTargetKey !== beforeZoneKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: beforeZoneKey }));
+            }
+          }}
+          onDrop={(draggedId) => {
+            onMove(draggedId, parentId, index);
+            setDragState({ draggedId: null, dropTargetKey: null });
+          }}
+        />
       )}
       <div
-        className="list-item-row"
+        className={`list-item-row ${dragState.draggedId && dragState.draggedId !== item.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
         style={{ marginLeft: depth > 0 ? 0 : 0 }}
         draggable={editMode}
         onDragStart={(e) => {
           if (!editMode) return;
           e.dataTransfer.setData('text/plain', item.id);
           e.dataTransfer.effectAllowed = 'move';
+          setDragState({ draggedId: item.id, dropTargetKey: null });
         }}
+        onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
         onDragOver={(e) => {
-          if (editMode) e.preventDefault();
+          if (editMode) {
+            e.preventDefault();
+            if (dragState.dropTargetKey !== nodeDropKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: nodeDropKey }));
+            }
+          }
         }}
         onDrop={(e) => {
           if (!editMode) return;
@@ -56,6 +84,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
             const childCount = item.children?.length || 0;
             onMove(draggedId, item.id, childCount);
           }
+          setDragState({ draggedId: null, dropTargetKey: null });
         }}
       >
         {/* Collapse toggle */}
@@ -182,13 +211,27 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
               parentId={item.id}
               index={childIndex}
               siblingsCount={item.children.length}
+              dragState={dragState}
+              setDragState={setDragState}
             />
           ))}
         </div>
       )}
 
       {editMode && index === siblingsCount - 1 && (
-        <DropZone depth={depth} onDrop={(draggedId) => onMove(draggedId, parentId, siblingsCount)} />
+        <DropZone
+          depth={depth}
+          isActive={dragState.draggedId && dragState.dropTargetKey === afterZoneKey}
+          onDragOver={() => {
+            if (dragState.dropTargetKey !== afterZoneKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: afterZoneKey }));
+            }
+          }}
+          onDrop={(draggedId) => {
+            onMove(draggedId, parentId, siblingsCount);
+            setDragState({ draggedId: null, dropTargetKey: null });
+          }}
+        />
       )}
     </div>
   );

@@ -49,12 +49,15 @@ function findNodeWithContext(nodes, id, parent = null) {
   return null;
 }
 
-function DropZone({ onDrop, depth = 0 }) {
+function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
     <div
-      className="list-item-drop-zone"
+      className={`list-item-drop-zone ${isActive ? 'active' : ''}`}
       style={{ marginLeft: depth > 0 ? 28 : 0 }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver?.(e);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         const draggedId = e.dataTransfer.getData('text/plain');
@@ -78,13 +81,21 @@ function TemplateItemRow({
   parentId = null,
   index = 0,
   siblingsCount = 1,
+  dragState: sharedDragState,
+  setDragState: setSharedDragState,
 }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [editUnit, setEditUnit] = useState(item.unit || '');
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const dragState = sharedDragState || localDragState;
+  const setDragState = setSharedDragState || setLocalDragState;
   const hasChildren = item.children && item.children.length > 0;
   const isCollapsed = !!item.collapsed;
   const isChecklist = templateType === 'CHECKLIST';
+  const beforeZoneKey = `zone:${parentId ?? 'root'}:${index}`;
+  const nodeDropKey = `node:${item.id}`;
+  const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
 
   useEffect(() => {
     setEditTitle(item.title);
@@ -114,19 +125,38 @@ function TemplateItemRow({
   return (
     <div>
       {editMode && (
-        <DropZone depth={depth} onDrop={(draggedId) => onMove(draggedId, parentId, index)} />
+        <DropZone
+          depth={depth}
+          isActive={dragState.draggedId && dragState.dropTargetKey === beforeZoneKey}
+          onDragOver={() => {
+            if (dragState.dropTargetKey !== beforeZoneKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: beforeZoneKey }));
+            }
+          }}
+          onDrop={(draggedId) => {
+            onMove(draggedId, parentId, index);
+            setDragState({ draggedId: null, dropTargetKey: null });
+          }}
+        />
       )}
 
       <div
-        className="list-item-row"
+        className={`list-item-row ${dragState.draggedId && dragState.draggedId !== item.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
         draggable={editMode}
         onDragStart={(e) => {
           if (!editMode) return;
           e.dataTransfer.setData('text/plain', item.id);
           e.dataTransfer.effectAllowed = 'move';
+          setDragState({ draggedId: item.id, dropTargetKey: null });
         }}
+        onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
         onDragOver={(e) => {
-          if (editMode) e.preventDefault();
+          if (editMode) {
+            e.preventDefault();
+            if (dragState.dropTargetKey !== nodeDropKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: nodeDropKey }));
+            }
+          }
         }}
         onDrop={(e) => {
           if (!editMode) return;
@@ -135,6 +165,7 @@ function TemplateItemRow({
           if (draggedId && draggedId !== item.id) {
             onMove(draggedId, item.id, item.children?.length || 0);
           }
+          setDragState({ draggedId: null, dropTargetKey: null });
         }}
       >
         {hasChildren ? (
@@ -208,13 +239,27 @@ function TemplateItemRow({
               parentId={item.id}
               index={childIndex}
               siblingsCount={item.children.length}
+              dragState={dragState}
+              setDragState={setDragState}
             />
           ))}
         </div>
       )}
 
       {editMode && index === siblingsCount - 1 && (
-        <DropZone depth={depth} onDrop={(draggedId) => onMove(draggedId, parentId, siblingsCount)} />
+        <DropZone
+          depth={depth}
+          isActive={dragState.draggedId && dragState.dropTargetKey === afterZoneKey}
+          onDragOver={() => {
+            if (dragState.dropTargetKey !== afterZoneKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: afterZoneKey }));
+            }
+          }}
+          onDrop={(draggedId) => {
+            onMove(draggedId, parentId, siblingsCount);
+            setDragState({ draggedId: null, dropTargetKey: null });
+          }}
+        />
       )}
     </div>
   );

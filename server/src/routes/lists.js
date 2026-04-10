@@ -53,7 +53,10 @@ router.get('/user/:token', async (req, res) => {
     const lists = await prisma.list.findMany({
       where: { userId: user.id },
       include: { template: { select: { id: true, title: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { position: 'asc' },
+        { createdAt: 'desc' },
+      ],
     });
     res.json(lists);
   } catch (e) {
@@ -85,10 +88,34 @@ router.post('/user/:token', async (req, res) => {
     const user = await prisma.user.findUnique({ where: { token: req.params.token } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const { title, type, templateId } = req.body;
+    const { title, type, templateId, parentId } = req.body;
+    const normalizedParentId = parentId || null;
+
+    if (normalizedParentId) {
+      const parent = await prisma.list.findUnique({
+        where: { id: normalizedParentId },
+        select: { id: true, userId: true },
+      });
+      if (!parent || parent.userId !== user.id) {
+        return res.status(400).json({ error: 'Parent list not found' });
+      }
+    }
+
+    const maxPos = await prisma.list.aggregate({
+      where: { userId: user.id, parentId: normalizedParentId },
+      _max: { position: true },
+    });
+    const position = (maxPos._max.position ?? -1) + 1;
 
     const list = await prisma.list.create({
-      data: { userId: user.id, title, type: type || 'CHECKLIST', templateId: templateId || null },
+      data: {
+        userId: user.id,
+        title,
+        type: type || 'CHECKLIST',
+        templateId: templateId || null,
+        parentId: normalizedParentId,
+        position,
+      },
     });
 
     // If from template, copy items
@@ -132,7 +159,7 @@ router.post('/user/:token', async (req, res) => {
 // Update list title / type
 router.patch('/:id', async (req, res) => {
   try {
-    const { title, type } = req.body;
+    const { title, type, collapsed } = req.body;
     const existingList = await prisma.list.findUnique({
       where: { id: req.params.id },
       include: {
@@ -151,7 +178,11 @@ router.patch('/:id', async (req, res) => {
 
     const list = await prisma.list.update({
       where: { id: req.params.id },
-      data: { ...(title && { title }), ...(type && { type }) },
+      data: {
+        ...(title && { title }),
+        ...(type && { type }),
+        ...(collapsed !== undefined && { collapsed }),
+      },
     });
     res.json(list);
   } catch (e) {
@@ -164,6 +195,75 @@ router.delete('/:id', async (req, res) => {
   try {
     await prisma.list.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Move/reorder list in a user's sidebar
+router.post('/:id/move', async (req, res) => {
+  try {
+    const { newParentId, newIndex } = req.body;
+    const moving = await prisma.list.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, userId: true, parentId: true },
+    });
+    if (!moving) return res.status(404).json({ error: 'List not found' });
+
+    const allLists = await prisma.list.findMany({
+      where: { userId: moving.userId },
+      select: { id: true, parentId: true, position: true },
+      orderBy: [
+        { position: 'asc' },
+        { createdAt: 'desc' },
+        { id: 'asc' },
+      ],
+    });
+
+    const normalizedParentId = newParentId || null;
+    if (normalizedParentId) {
+      const parent = allLists.find(l => l.id === normalizedParentId);
+      if (!parent) return res.status(400).json({ error: 'New parent not found' });
+      if (parent.id === moving.id) return res.status(400).json({ error: 'Cannot parent list to itself' });
+      if (isDescendant(allLists, moving.id, normalizedParentId)) {
+        return res.status(400).json({ error: 'Cannot move list under its own descendant' });
+      }
+    }
+
+    const oldParentId = moving.parentId || null;
+    const targetSiblings = allLists
+      .filter(l => (l.parentId || null) === normalizedParentId && l.id !== moving.id)
+      .sort((a, b) => a.position - b.position)
+      .map(l => l.id);
+
+    const maxIndex = targetSiblings.length;
+    const safeIndex = Math.max(0, Math.min(Number.isInteger(newIndex) ? newIndex : maxIndex, maxIndex));
+    const newSiblingOrder = insertAt(targetSiblings, safeIndex, moving.id);
+
+    const oldSiblings = allLists
+      .filter(l => (l.parentId || null) === oldParentId && l.id !== moving.id)
+      .sort((a, b) => a.position - b.position)
+      .map(l => l.id);
+
+    await prisma.$transaction(async tx => {
+      await tx.list.update({
+        where: { id: moving.id },
+        data: { parentId: normalizedParentId },
+      });
+
+      if (oldParentId !== normalizedParentId) {
+        for (let i = 0; i < oldSiblings.length; i++) {
+          await tx.list.update({ where: { id: oldSiblings[i] }, data: { position: i } });
+        }
+      }
+
+      for (let i = 0; i < newSiblingOrder.length; i++) {
+        await tx.list.update({ where: { id: newSiblingOrder[i] }, data: { position: i } });
+      }
+    });
+
+    const list = await prisma.list.findUnique({ where: { id: moving.id } });
+    res.json(list);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

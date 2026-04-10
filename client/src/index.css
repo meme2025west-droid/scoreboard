@@ -157,6 +157,9 @@ label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 4px
 .sidebar-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text2); transition: background 0.1s; border: none; background: transparent; width: 100%; text-align: left; }
 .sidebar-item:hover { background: var(--bg3); color: var(--text); }
 .sidebar-item.active { background: var(--accent) !important; color: #fff !important; }
+.sidebar-item.drop-target { outline: 1px dashed color-mix(in oklab, var(--accent) 70%, var(--border)); outline-offset: -1px; }
+.sidebar-drop-zone { height: 6px; border-radius: 6px; margin: 2px 0; background: transparent; }
+.sidebar-drop-zone.active { background: color-mix(in oklab, var(--accent) 70%, var(--bg)); }
 
 .timelog-entry { padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: var(--bg3); }
 .timelog-meta { font-size: 12px; color: var(--text3); margin-top: 4px; }

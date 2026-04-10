@@ -138,7 +138,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
         {/* Score controls after title for scorecard */}
         {isScorecard && (
           <div className="score-display">
-            {[1,2,3,4,5,6,7,8,9,10].map(n => (
+            {[0,1,2,3,4,5,6,7,8,9,10].map(n => (
               <button
                 key={n}
                 className={`score-pip ${val.score >= n ? 'filled' : ''}`}

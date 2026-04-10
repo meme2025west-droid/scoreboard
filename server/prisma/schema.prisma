@@ -63,12 +63,17 @@ model List {
   id         String   @id @default(cuid())
   userId     String
   templateId String?
+  parentId   String?
   title      String
   type       String
+  position   Int      @default(0)
+  collapsed  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   template    Template?    @relation(fields: [templateId], references: [id])
+  parent      List?        @relation("ListChildren", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  children    List[]       @relation("ListChildren")
   items       ListItem[]
   submissions Submission[]
 }

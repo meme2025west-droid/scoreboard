@@ -145,6 +145,10 @@ router.patch('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Cannot change list type after submissions exist' });
     }
 
+    if (type && type !== existingList.type && existingList.templateId) {
+      return res.status(400).json({ error: 'Cannot change list type while linked to a template' });
+    }
+
     const list = await prisma.list.update({
       where: { id: req.params.id },
       data: { ...(title && { title }), ...(type && { type }) },

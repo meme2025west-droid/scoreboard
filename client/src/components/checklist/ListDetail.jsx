@@ -195,6 +195,11 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
   }
 
   async function handleTypeChange(newType) {
+    if (isTemplateLocked) {
+      toast('Type is managed by template. Ask an admin to update the template.', 'error');
+      return;
+    }
+
     if (hasSubmissions) {
       toast('Type cannot change after submissions exist', 'error');
       return;
@@ -244,9 +249,9 @@ export default function ListDetail({ listId, onDelete, onUpdate }) {
             <select
               value={selectType}
               onChange={e => handleTypeChange(e.target.value)}
-              disabled={hasSubmissions}
+              disabled={hasSubmissions || isTemplateLocked}
               style={{ width: 'auto', fontSize: 12, padding: '3px 8px' }}
-              title={hasSubmissions ? 'Type is locked because this list already has submissions' : 'Change list type'}
+              title={isTemplateLocked ? 'Type is locked because this list is linked to a template' : (hasSubmissions ? 'Type is locked because this list already has submissions' : 'Change list type')}
             >
               <option value="CHECKLIST">Checklist</option>
               <option value="SCORECARD">Scorecard</option>

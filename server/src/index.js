@@ -17,30 +17,43 @@ import adminRouter from './routes/admin.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+export function createApp() {
+  const app = express();
+  const clientBuild = process.env.CLIENT_DIST_DIR || path.join(__dirname, '../../client/dist');
 
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors());
-app.use(express.json());
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(cors());
+  app.use(express.json());
 
-// API routes
-app.use('/api/users', usersRouter);
-app.use('/api/lists', listsRouter);
-app.use('/api/submissions', submissionsRouter);
-app.use('/api/timelog', timelogRouter);
-app.use('/api/effort', effortRouter);
-app.use('/api/projects', projectsRouter);
-app.use('/api/templates', templatesRouter);
-app.use('/api/admin', adminRouter);
+  // API routes
+  app.use('/api/users', usersRouter);
+  app.use('/api/lists', listsRouter);
+  app.use('/api/submissions', submissionsRouter);
+  app.use('/api/timelog', timelogRouter);
+  app.use('/api/effort', effortRouter);
+  app.use('/api/projects', projectsRouter);
+  app.use('/api/templates', templatesRouter);
+  app.use('/api/admin', adminRouter);
 
-// Serve React build in production
-const clientBuild = path.join(__dirname, '../../client/dist');
-app.use(express.static(clientBuild));
-app.get('/{*splat}', (_req, res) => {
-  res.sendFile(path.join(clientBuild, 'index.html'));
-});
+  // Serve React build in production
+  app.use(express.static(clientBuild));
+  app.get('/{*splat}', (_req, res) => {
+    res.sendFile(path.join(clientBuild, 'index.html'));
+  });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+  return app;
+}
+
+export function startServer(port = process.env.PORT || 3001) {
+  const app = createApp();
+  return new Promise((resolve) => {
+    const server = app.listen(port, () => {
+      console.log(`Server running on http://localhost:${port}`);
+      resolve(server);
+    });
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await startServer();
+}

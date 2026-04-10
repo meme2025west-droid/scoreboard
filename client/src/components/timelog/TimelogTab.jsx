@@ -14,13 +14,20 @@ const EST_TZ = 'America/New_York';
 const COLORS = ['#6c63ff','#4a9eff','#4caf7d','#f5a623','#f06565','#a78bfa','#ff6b9d','#00c9a7'];
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return formatLocalDate(new Date());
 }
 
 function weekAgoStr() {
   const date = new Date();
   date.setDate(date.getDate() - 7);
-  return date.toISOString().slice(0, 10);
+  return formatLocalDate(date);
+}
+
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function flattenTree(nodes, arr = []) {
@@ -323,6 +330,21 @@ export default function TimelogTab({ token, user }) {
     }
   }
 
+  async function applyTodayRange() {
+    try {
+      const today = todayStr();
+      const fromISO = new Date(today + 'T00:00:00').toISOString();
+      const toISO = new Date(today + 'T23:59:59').toISOString();
+      setRangeFromInput(today);
+      setRangeToInput(today);
+      setRangeFrom(today);
+      setRangeTo(today);
+      await loadTallyCounts(fromISO, toISO);
+    } catch {
+      toast('Failed to set today range', 'error');
+    }
+  }
+
   function handleViewChange(nextView) {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('tab', 'timelog');
@@ -355,6 +377,7 @@ export default function TimelogTab({ token, user }) {
               <input type="date" value={rangeToInput} onChange={e => setRangeToInput(e.target.value)} style={{ width: 160 }} />
             </div>
             <button className="btn btn-secondary btn-sm" onClick={applyRange} style={{ height: 38 }}>Apply</button>
+            <button className="btn btn-secondary btn-sm" onClick={applyTodayRange} style={{ height: 38 }}>Today</button>
             <button
               className={`btn btn-secondary btn-sm ${showStarredOnly ? 'active-edit-btn' : ''}`}
               onClick={handleToggleStarredOnly}

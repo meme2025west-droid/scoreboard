@@ -415,6 +415,15 @@ export default function AdminPage() {
                 <div className="card" style={{ marginBottom: 16 }}>
                   <div className="section-title" style={{ marginBottom: 8 }}>User</div>
                   <div className="token-box" style={{ marginBottom: 8 }}>{selectedUser.token}</div>
+                  <div style={{ marginBottom: 8 }}>
+                    <a
+                      href={`/u/${selectedUser.token}`}
+                      className="btn btn-secondary btn-sm"
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                    >
+                      Open user site ↗
+                    </a>
+                  </div>
                   <div style={{ fontSize: 13, color: 'var(--text3)' }}>
                     Joined: {fmt(selectedUser.createdAt)} · TZ: {selectedUser.timezone}
                   </div>

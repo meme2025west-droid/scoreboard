@@ -154,6 +154,15 @@ export default function TimelogTab({ token, user }) {
   }, [token]);
 
   useEffect(() => {
+    const starredOnlyParam = searchParams.get('starredOnly');
+    if (starredOnlyParam !== null) {
+      const val = starredOnlyParam === 'true';
+      setShowStarredOnly(val);
+      try { localStorage.setItem(getStarredOnlyStorageKey(token), val ? 'true' : 'false'); } catch {}
+    }
+  }, [searchParams, token]);
+
+  useEffect(() => {
     if (!requestedView) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set('timelogView', 'log');
@@ -297,9 +306,10 @@ export default function TimelogTab({ token, user }) {
       const next = !prev;
       try {
         localStorage.setItem(getStarredOnlyStorageKey(token), String(next));
-      } catch {
-        // Ignore storage errors and keep the in-memory toggle.
-      }
+      } catch {}
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('starredOnly', next ? 'true' : 'false');
+      setSearchParams(nextParams, { replace: true });
       return next;
     });
   }

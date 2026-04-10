@@ -24,6 +24,8 @@ export default function UserPage() {
 
   const requestedTab = searchParams.get('tab');
   const tab = requestedTab === 'timelog' ? 'timelog' : 'lists';
+  const tallyActive = tab === 'timelog' && searchParams.get('starredOnly') === 'true';
+  const timelogActive = tab === 'timelog' && !tallyActive;
 
   useEffect(() => {
     getUser(token)
@@ -40,13 +42,19 @@ export default function UserPage() {
     }
   }, [requestedTab, searchParams, setSearchParams]);
 
-  function handleTabChange(nextTab) {
+  function handleTabChange(nextTab, { starredOnly } = {}) {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('tab', nextTab);
     if (nextTab !== 'timelog') {
       nextParams.delete('timelogView');
-    } else if (!nextParams.get('timelogView')) {
-      nextParams.set('timelogView', 'log');
+      nextParams.delete('starredOnly');
+    } else {
+      if (!nextParams.get('timelogView')) {
+        nextParams.set('timelogView', 'log');
+      }
+      if (starredOnly !== undefined) {
+        nextParams.set('starredOnly', starredOnly ? 'true' : 'false');
+      }
     }
     setSearchParams(nextParams);
   }
@@ -77,7 +85,8 @@ export default function UserPage() {
         <a href="/" className="nav-brand" style={{ textDecoration: 'none' }}>⬡ Scorecard</a>
         <div className="nav-tabs">
           <button className={`nav-tab ${tab === 'lists' ? 'active' : ''}`} onClick={() => handleTabChange('lists')}>Lists</button>
-          <button className={`nav-tab ${tab === 'timelog' ? 'active' : ''}`} onClick={() => handleTabChange('timelog')}>Timelog</button>
+          <button className={`nav-tab ${timelogActive ? 'active' : ''}`} onClick={() => handleTabChange('timelog', { starredOnly: false })}>Timelog</button>
+          <button className={`nav-tab ${tallyActive ? 'active' : ''}`} onClick={() => handleTabChange('timelog', { starredOnly: true })}>Tally</button>
           <button className="nav-tab" onClick={() => setShowSettings(s => !s)} style={{ fontSize: 18, padding: '6px 12px' }}>⚙</button>
         </div>
       </nav>

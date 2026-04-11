@@ -184,9 +184,11 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <button className="btn-icon" title="Note" onClick={() => setShowNotes(s => !s)} style={{ fontSize: 14 }}>
-            📝
-          </button>
+          {(editMode || item.notes) && (
+            <button className="btn-icon" title="Note" onClick={() => setShowNotes(s => !s)} style={{ fontSize: 14 }}>
+              📝
+            </button>
+          )}
           <button className="btn-icon" title="Comment" onClick={() => setShowComment(s => !s)} style={{ fontSize: 14 }}>
             💬
           </button>
@@ -202,30 +204,46 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
       {/* Notes field */}
       {showNotes && (
         <div style={{ paddingLeft: depth * 28 + 54, marginBottom: 6 }}>
-          <textarea
-            value={editingNotes}
-            onChange={e => setEditingNotes(e.target.value)}
-            placeholder="Add notes (supports markdown)…"
-            style={{ fontSize: 13, minHeight: 80 }}
-          />
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <button 
-              className="btn btn-primary btn-sm" 
-              onClick={saveNotes}
-              disabled={savingNotes}
-            >
-              {savingNotes ? 'Saving...' : 'Save'}
-            </button>
-            <button 
-              className="btn btn-secondary btn-sm" 
-              onClick={() => {
-                setEditingNotes(item.notes || '');
-                setShowNotes(false);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
+          {editMode ? (
+            <>
+              <textarea
+                value={editingNotes}
+                onChange={e => setEditingNotes(e.target.value)}
+                placeholder="Add notes (supports markdown)…"
+                style={{ fontSize: 13, minHeight: 80 }}
+              />
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <button 
+                  className="btn btn-primary btn-sm" 
+                  onClick={saveNotes}
+                  disabled={savingNotes}
+                >
+                  {savingNotes ? 'Saving...' : 'Save'}
+                </button>
+                <button 
+                  className="btn btn-secondary btn-sm" 
+                  onClick={() => {
+                    setEditingNotes(item.notes || '');
+                    setShowNotes(false);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ 
+              fontSize: 13, 
+              padding: '8px 12px', 
+              background: 'var(--bg3)', 
+              border: '1px solid var(--border)', 
+              borderRadius: 4,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}>
+              {item.notes || '(no notes)'}
+            </div>
+          )}
         </div>
       )}
 

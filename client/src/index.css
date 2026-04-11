@@ -101,6 +101,10 @@ label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 4px
 
 .list-item-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3); margin-bottom: 6px; transition: border-color 0.1s; }
 .list-item-row:hover { border-color: #3e4460; }
+.list-item-row.selected {
+  border-color: color-mix(in oklab, var(--accent) 72%, var(--border));
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg3));
+}
 .list-item-row.drop-target {
   border-color: color-mix(in oklab, var(--accent) 65%, var(--border));
   background: color-mix(in oklab, var(--accent) 14%, var(--bg3));

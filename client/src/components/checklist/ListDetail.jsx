@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, syncListFromTemplate, duplicateDetachedList } from '../../api/lists.js';
 import { submitList, getSubmissions } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
@@ -23,11 +23,30 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
   const [addingItem, setAddingItem] = useState(null); // parentId or 'root'
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('');
+  const [selectedItemIds, setSelectedItemIds] = useState(() => new Set());
+  const [selectionAnchorId, setSelectionAnchorId] = useState(null);
+
+  const tree = useMemo(() => list?.itemsTree || [], [list?.itemsTree]);
+  const visibleItemIds = useMemo(() => flattenVisibleIds(tree), [tree]);
 
   useEffect(() => {
     loadList();
     loadSubmissions();
+    setSelectedItemIds(new Set());
+    setSelectionAnchorId(null);
   }, [listId]);
+
+  useEffect(() => {
+    const existingIds = new Set((list?.items || []).map((i) => i.id));
+    setSelectedItemIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (existingIds.has(id)) next.add(id);
+      });
+      return next;
+    });
+    setSelectionAnchorId((prev) => (prev && existingIds.has(prev) ? prev : null));
+  }, [list?.items]);
 
   async function loadList() {
     setLoading(true);
@@ -210,6 +229,13 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
     if (!(await ensureDetachedForEdit('delete items'))) return;
     try {
       await deleteListItem(itemId);
+      setSelectedItemIds((prev) => {
+        if (!prev.has(itemId)) return prev;
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+      setSelectionAnchorId((prev) => (prev === itemId ? null : prev));
       loadList();
     } catch { toast('Failed to delete', 'error'); }
   }
@@ -241,14 +267,57 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
     }
   }
 
-  async function handleMoveItem(itemId, newParentId, newIndex) {
+  async function handleMoveItems(itemIds, newParentId, newIndex) {
     if (!(await ensureDetachedForEdit('reorder items'))) return;
     try {
-      await moveListItem(itemId, { newParentId, newIndex });
+      const ids = Array.from(new Set((itemIds || []).filter(Boolean)));
+      if (ids.length === 0) return;
+
+      const parentById = new Map((list?.items || []).map((i) => [i.id, i.parentId || null]));
+      const selectedSet = new Set(ids);
+      const topLevelIds = ids.filter((id) => {
+        let parent = parentById.get(id) || null;
+        while (parent) {
+          if (selectedSet.has(parent)) return false;
+          parent = parentById.get(parent) || null;
+        }
+        return true;
+      });
+
+      const isAncestor = (ancestorId, maybeDescendantId) => {
+        let current = maybeDescendantId || null;
+        while (current) {
+          if (current === ancestorId) return true;
+          current = parentById.get(current) || null;
+        }
+        return false;
+      };
+
+      const movableTopLevelIds = topLevelIds.filter((id) => id !== newParentId && !isAncestor(id, newParentId));
+      if (movableTopLevelIds.length === 0) return;
+
+      const orderedVisible = flattenVisibleIds(tree);
+      const orderedTopLevelIds = [
+        ...orderedVisible.filter((id) => movableTopLevelIds.includes(id)),
+        ...movableTopLevelIds.filter((id) => !orderedVisible.includes(id)),
+      ];
+
+      let insertionIndex = Math.max(0, Number.isInteger(newIndex) ? newIndex : 0);
+      for (const id of orderedTopLevelIds) {
+        await moveListItem(id, { newParentId, newIndex: insertionIndex });
+        insertionIndex += 1;
+      }
+
+      setSelectedItemIds(new Set(orderedTopLevelIds));
       loadList();
     } catch {
       toast('Failed to move item', 'error');
     }
+  }
+
+  async function handleMoveItem(itemIdOrIds, newParentId, newIndex) {
+    const ids = Array.isArray(itemIdOrIds) ? itemIdOrIds : [itemIdOrIds];
+    await handleMoveItems(ids, newParentId, newIndex);
   }
 
   function findNodeWithContext(nodes, id, parent = null) {
@@ -310,11 +379,42 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
   const selectType = isScorecard ? 'SCORECARD' : list.type;
   const hasSubmissions = submissions.length > 0;
 
-  const tree = list.itemsTree || [];
+  function handleRowSelect(itemId, event) {
+    if (!editMode) return;
+    // Only handle clicks directly on the row, not on interactive elements
+    const target = event?.target;
+    const isInteractiveElement = target?.closest?.('button,input,textarea,select,a,label,[contenteditable="true"]');
+    if (isInteractiveElement) {
+      return;
+    }
+
+    if (event?.shiftKey && selectionAnchorId) {
+      const anchorIdx = visibleItemIds.indexOf(selectionAnchorId);
+      const currentIdx = visibleItemIds.indexOf(itemId);
+      
+      if (anchorIdx !== -1 && currentIdx !== -1) {
+        const start = Math.min(anchorIdx, currentIdx);
+        const end = Math.max(anchorIdx, currentIdx);
+        const range = visibleItemIds.slice(start, end + 1);
+        
+        setSelectedItemIds((prev) => {
+          const next = new Set(prev);
+          range.forEach((id) => next.add(id));
+          return next;
+        });
+        return;
+      }
+    }
+
+    setSelectedItemIds(new Set([itemId]));
+    setSelectionAnchorId(itemId);
+  }
 
   async function handleToggleEditMode() {
     if (editMode) {
       setEditMode(false);
+      setSelectedItemIds(new Set());
+      setSelectionAnchorId(null);
       return;
     }
     if (!(await ensureDetachedForEdit('reorder items'))) return;
@@ -402,6 +502,8 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
             onToggleCollapse={handleToggleCollapse}
             onAddChild={handleStartAddItem}
             isTemplateLocked={isTemplateLocked}
+            selectedItemIds={selectedItemIds}
+            onSelectRow={handleRowSelect}
             parentId={null}
             index={idx}
             siblingsCount={tree.length}
@@ -505,4 +607,15 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
       )}
     </div>
   );
+}
+
+function flattenVisibleIds(nodes) {
+  const out = [];
+  for (const node of nodes || []) {
+    out.push(node.id);
+    if (!node.collapsed && node.children?.length) {
+      out.push(...flattenVisibleIds(node.children));
+    }
+  }
+  return out;
 }

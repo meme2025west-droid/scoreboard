@@ -11,18 +11,18 @@ function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
       }}
       onDrop={(e) => {
         e.preventDefault();
-        const draggedId = e.dataTransfer.getData('text/plain');
-        if (draggedId) onDrop(draggedId);
+        const draggedIds = readDraggedIds(e);
+        if (draggedIds.length > 0) onDrop(draggedIds);
       }}
     />
   );
 }
 
-export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, isTemplateLocked = false, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState }) {
+export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, isTemplateLocked = false, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState, selectedItemIds, onSelectRow }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [showComment, setShowComment] = useState(false);
-  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, draggedIds: [], dropTargetKey: null });
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
   const val = values[item.id] || { checked: false, score: null, comment: '', numberValue: '' };
@@ -32,6 +32,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   const beforeZoneKey = `zone:${parentId ?? 'root'}:${index}`;
   const nodeDropKey = `node:${item.id}`;
   const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
+  const isSelected = selectedItemIds?.has?.(item.id) || false;
 
   function saveTitle() {
     if (editTitle.trim() && editTitle !== item.title) {
@@ -53,21 +54,24 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
           }}
           onDrop={(draggedId) => {
             onMove(draggedId, parentId, index);
-            setDragState({ draggedId: null, dropTargetKey: null });
+            setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
           }}
         />
       )}
       <div
-        className={`list-item-row ${dragState.draggedId && dragState.draggedId !== item.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
+        className={`list-item-row ${isSelected ? 'selected' : ''} ${dragState.draggedIds?.length && !dragState.draggedIds.includes(item.id) && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
         style={{ marginLeft: depth > 0 ? 0 : 0 }}
         draggable={editMode}
         onDragStart={(e) => {
           if (!editMode) return;
-          e.dataTransfer.setData('text/plain', item.id);
+          const canDragSelection = selectedItemIds?.has?.(item.id) && selectedItemIds.size > 1;
+          const draggedIds = canDragSelection ? Array.from(selectedItemIds) : [item.id];
+          e.dataTransfer.setData('application/x-list-item-ids', JSON.stringify(draggedIds));
+          e.dataTransfer.setData('text/plain', draggedIds[0]);
           e.dataTransfer.effectAllowed = 'move';
-          setDragState({ draggedId: item.id, dropTargetKey: null });
+          setDragState({ draggedId: item.id, draggedIds, dropTargetKey: null });
         }}
-        onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
+        onDragEnd={() => setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null })}
         onDragOver={(e) => {
           if (editMode) {
             e.preventDefault();
@@ -79,13 +83,14 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
         onDrop={(e) => {
           if (!editMode) return;
           e.preventDefault();
-          const draggedId = e.dataTransfer.getData('text/plain');
-          if (draggedId && draggedId !== item.id) {
+          const draggedIds = readDraggedIds(e);
+          if (draggedIds.length > 0 && !draggedIds.includes(item.id)) {
             const childCount = item.children?.length || 0;
-            onMove(draggedId, item.id, childCount);
+            onMove(draggedIds, item.id, childCount);
           }
-          setDragState({ draggedId: null, dropTargetKey: null });
+          setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
         }}
+        onClick={(e) => onSelectRow?.(item.id, e)}
       >
         {/* Collapse toggle */}
         {hasChildren ? (
@@ -208,6 +213,8 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
               onToggleCollapse={onToggleCollapse}
               onAddChild={onAddChild}
               isTemplateLocked={isTemplateLocked}
+              selectedItemIds={selectedItemIds}
+              onSelectRow={onSelectRow}
               depth={depth + 1}
               parentId={item.id}
               index={childIndex}
@@ -230,10 +237,26 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
           }}
           onDrop={(draggedId) => {
             onMove(draggedId, parentId, siblingsCount);
-            setDragState({ draggedId: null, dropTargetKey: null });
+            setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
           }}
         />
       )}
     </div>
   );
+}
+
+function readDraggedIds(event) {
+  const raw = event.dataTransfer.getData('application/x-list-item-ids');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((id) => typeof id === 'string' && id);
+      }
+    } catch {
+      // Ignore malformed payload and fall back to plain text.
+    }
+  }
+  const draggedId = event.dataTransfer.getData('text/plain');
+  return draggedId ? [draggedId] : [];
 }

@@ -192,6 +192,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
             <span onDoubleClick={() => { setEditing(true); setEditTitle(item.title); }}>{item.title}</span>
           )}
           {isChecklist && item.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{item.unit}]</span>}
+          {editMode && item.notes && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', marginLeft: 8, verticalAlign: 'middle' }} title="This item has notes" />}
         </div>
 
         {editMode && (

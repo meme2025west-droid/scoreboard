@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
@@ -51,6 +52,57 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
       setShowNotes(false);
     } finally {
       setSavingNotes(false);
+    }
+  }
+
+  function handleNotesKeyDown(e) {
+    if (e.ctrlKey) {
+      switch (e.key) {
+        case 'b':
+        case 'B':
+          e.preventDefault();
+          const textarea = e.target;
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const selectedText = editingNotes.substring(start, end);
+          const before = editingNotes.substring(0, start);
+          const after = editingNotes.substring(end);
+          setEditingNotes(before + '**' + (selectedText || 'bold') + '**' + after);
+          break;
+        case 'i':
+        case 'I':
+          e.preventDefault();
+          const ta1 = e.target;
+          const s1 = ta1.selectionStart;
+          const e1 = ta1.selectionEnd;
+          const sel1 = editingNotes.substring(s1, e1);
+          const b1 = editingNotes.substring(0, s1);
+          const a1 = editingNotes.substring(e1);
+          setEditingNotes(b1 + '*' + (sel1 || 'italic') + '*' + a1);
+          break;
+        case 'u':
+        case 'U':
+          e.preventDefault();
+          const ta2 = e.target;
+          const s2 = ta2.selectionStart;
+          const e2 = ta2.selectionEnd;
+          const sel2 = editingNotes.substring(s2, e2);
+          const b2 = editingNotes.substring(0, s2);
+          const a2 = editingNotes.substring(e2);
+          setEditingNotes(b2 + '<u>' + (sel2 || 'underline') + '</u>' + a2);
+          break;
+        case '-':
+          e.preventDefault();
+          const ta3 = e.target;
+          const s3 = ta3.selectionStart;
+          const lineStart = editingNotes.lastIndexOf('\n', s3 - 1) + 1;
+          const before3 = editingNotes.substring(0, lineStart);
+          const after3 = editingNotes.substring(lineStart);
+          setEditingNotes(before3 + '- ' + after3);
+          break;
+        default:
+          break;
+      }
     }
   }
 
@@ -209,7 +261,8 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
               <textarea
                 value={editingNotes}
                 onChange={e => setEditingNotes(e.target.value)}
-                placeholder="Add notes (supports markdown)…"
+                onKeyDown={handleNotesKeyDown}
+                placeholder="Add notes (supports markdown)… Ctrl+B: bold, Ctrl+I: italic, Ctrl+U: underline, Ctrl+-: bullet"
                 style={{ fontSize: 13, minHeight: 80 }}
               />
               <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -238,10 +291,16 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
               background: 'var(--bg3)', 
               border: '1px solid var(--border)', 
               borderRadius: 4,
-              whiteSpace: 'pre-wrap',
               wordBreak: 'break-word'
             }}>
-              {item.notes || '(no notes)'}
+              {item.notes ? (
+                <div 
+                  dangerouslySetInnerHTML={{ __html: item.notes }} 
+                  style={{ fontSize: 13 }}
+                />
+              ) : (
+                '(no notes)'
+              )}
             </div>
           )}
         </div>

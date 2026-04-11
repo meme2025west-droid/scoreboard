@@ -134,6 +134,7 @@ router.post('/user/:token', async (req, res) => {
             title: ti.title,
             position: ti.position,
             unit: ti.unit || null,
+            notes: ti.notes || null,
             parentId: null,
           },
         });
@@ -249,6 +250,7 @@ router.post('/:id/duplicate-detached', async (req, res) => {
             position: srcItem.position,
             unit: srcItem.unit,
             collapsed: srcItem.collapsed,
+            notes: srcItem.notes,
             parentId: null,
           },
         });
@@ -378,7 +380,7 @@ router.post('/:id/items', async (req, res) => {
 // Update item
 router.patch('/items/:itemId', async (req, res) => {
   try {
-    const { title, unit, collapsed, position, parentId } = req.body;
+    const { title, unit, collapsed, position, parentId, notes } = req.body;
     const existing = await prisma.listItem.findUnique({
       where: { id: req.params.itemId },
       include: { list: { select: { templateId: true } } },
@@ -400,6 +402,7 @@ router.patch('/items/:itemId', async (req, res) => {
         ...(collapsed !== undefined && { collapsed }),
         ...(position !== undefined && { position }),
         ...(parentId !== undefined && { parentId }),
+        ...(notes !== undefined && { notes }),
       },
     });
     res.json(item);

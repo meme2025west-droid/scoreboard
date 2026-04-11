@@ -22,6 +22,9 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [showComment, setShowComment] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(item.notes || '');
+  const [savingNotes, setSavingNotes] = useState(false);
   const [localDragState, setLocalDragState] = useState({ draggedId: null, draggedIds: [], dropTargetKey: null });
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
@@ -39,6 +42,16 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
       onUpdate(item.id, { title: editTitle });
     }
     setEditing(false);
+  }
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      await onUpdate(item.id, { notes: editingNotes });
+      setShowNotes(false);
+    } finally {
+      setSavingNotes(false);
+    }
   }
 
   return (
@@ -171,6 +184,9 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <button className="btn-icon" title="Note" onClick={() => setShowNotes(s => !s)} style={{ fontSize: 14 }}>
+            📝
+          </button>
           <button className="btn-icon" title="Comment" onClick={() => setShowComment(s => !s)} style={{ fontSize: 14 }}>
             💬
           </button>
@@ -182,6 +198,36 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
           </button>
         </div>
       </div>
+
+      {/* Notes field */}
+      {showNotes && (
+        <div style={{ paddingLeft: depth * 28 + 54, marginBottom: 6 }}>
+          <textarea
+            value={editingNotes}
+            onChange={e => setEditingNotes(e.target.value)}
+            placeholder="Add notes (supports markdown)…"
+            style={{ fontSize: 13, minHeight: 80 }}
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button 
+              className="btn btn-primary btn-sm" 
+              onClick={saveNotes}
+              disabled={savingNotes}
+            >
+              {savingNotes ? 'Saving...' : 'Save'}
+            </button>
+            <button 
+              className="btn btn-secondary btn-sm" 
+              onClick={() => {
+                setEditingNotes(item.notes || '');
+                setShowNotes(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Comment field */}
       {showComment && (

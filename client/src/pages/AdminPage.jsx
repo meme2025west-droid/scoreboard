@@ -49,6 +49,20 @@ function findNodeWithContext(nodes, id, parent = null) {
   return null;
 }
 
+function parseIndentedItemLines(raw) {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = line.match(/^[\t ]*/);
+      const indent = match ? match[0] : '';
+      const tabs = (indent.match(/\t/g) || []).length;
+      const spaces = (indent.match(/ /g) || []).length;
+      const depth = tabs + Math.floor(spaces / 4);
+      return { title: line.trim(), depth };
+    })
+    .filter((entry) => entry.title);
+}
+
 function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
     <div
@@ -388,17 +402,57 @@ export default function AdminPage() {
   }
 
   async function handleAddTemplateItem(templateId) {
-    if (!newItemTitle.trim()) return;
+    const lines = parseIndentedItemLines(newItemTitle);
+    if (lines.length === 0) return;
     try {
       const unit = selectedTemplate?.type === 'CHECKLIST' ? (newItemUnit || null) : null;
-      await addTemplateItem(adminToken, templateId, { title: newItemTitle, unit });
+      const parentStack = [];
+      let prevDepth = 0;
+
+      for (const entry of lines) {
+        const desiredDepth = Number.isInteger(entry.depth) ? entry.depth : 0;
+        const safeDepth = Math.min(desiredDepth, prevDepth + 1);
+        const effectiveDepth = Math.max(0, safeDepth);
+        const parentId = effectiveDepth === 0 ? null : parentStack[effectiveDepth - 1] || null;
+
+        const created = await addTemplateItem(adminToken, templateId, {
+          title: entry.title,
+          parentId,
+          unit,
+        });
+
+        parentStack[effectiveDepth] = created.id;
+        parentStack.length = effectiveDepth + 1;
+        prevDepth = effectiveDepth;
+      }
+
       const updated = await getTemplates();
       setTemplates(updated);
       setSelectedTemplate(current => current ? updated.find(t => t.id === current.id) || current : current);
       setNewItemTitle(''); setNewItemUnit('');
       setTemplateItemsVersion(version => version + 1);
-      toast('Item added');
+      toast(lines.length > 1 ? `Added ${lines.length} items` : 'Item added');
     } catch { toast('Failed', 'error'); }
+  }
+
+  function handleAddTextareaKeyDown(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target;
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? 0;
+      const currentValue = target.value ?? '';
+      const next = `${currentValue.slice(0, start)}\t${currentValue.slice(end)}`;
+      setNewItemTitle(next);
+      requestAnimationFrame(() => {
+        target.selectionStart = start + 1;
+        target.selectionEnd = start + 1;
+      });
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && selectedTemplate?.id) {
+      handleAddTemplateItem(selectedTemplate.id);
+    }
   }
 
   if (!authed) return (
@@ -573,14 +627,25 @@ export default function AdminPage() {
                   refreshKey={templateItemsVersion}
                 />
 
-                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                  <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+                  <textarea
+                    value={newItemTitle}
+                    onChange={e => setNewItemTitle(e.target.value)}
+                    placeholder="Type or paste items, one per line. Use tab or 4 spaces for sub-items…"
+                    rows={4}
+                    draggable={false}
+                    onMouseDown={e => e.stopPropagation()}
+                    onKeyDown={handleAddTextareaKeyDown}
+                  />
                   {selectedTemplate.type === 'CHECKLIST' && (
-                    <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit" style={{ width: 100 }} />
+                    <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit for all items (optional)" style={{ width: 180 }} />
                   )}
-                  <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={() => handleAddTemplateItem(selectedTemplate.id)}>
-                    + Add
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={() => handleAddTemplateItem(selectedTemplate.id)}>
+                      + Add
+                    </button>
+                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>Tip: one per line, tab/4 spaces indents, Ctrl+Enter adds</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -684,21 +749,58 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
   }
 
   async function handleAddChild(parentId) {
-    if (!newChildTitle.trim()) return;
+    const lines = parseIndentedItemLines(newChildTitle);
+    if (lines.length === 0) return;
 
     try {
-      await addTemplateItem(adminToken, templateId, {
-        title: newChildTitle,
-        parentId,
-        unit: templateType === 'CHECKLIST' ? (newChildUnit || null) : null,
-      });
+      const baseParentId = parentId;
+      const parentStack = [];
+      let prevDepth = 0;
+
+      for (const entry of lines) {
+        const desiredDepth = Number.isInteger(entry.depth) ? entry.depth : 0;
+        const safeDepth = Math.min(desiredDepth, prevDepth + 1);
+        const effectiveDepth = Math.max(0, safeDepth);
+        const itemParentId = effectiveDepth === 0 ? baseParentId : (parentStack[effectiveDepth - 1] || baseParentId);
+
+        const created = await addTemplateItem(adminToken, templateId, {
+          title: entry.title,
+          parentId: itemParentId,
+          unit: templateType === 'CHECKLIST' ? (newChildUnit || null) : null,
+        });
+
+        parentStack[effectiveDepth] = created.id;
+        parentStack.length = effectiveDepth + 1;
+        prevDepth = effectiveDepth;
+      }
+
       setAddingChild(null);
       setNewChildTitle('');
       setNewChildUnit('');
       await loadItems();
-      toast('Item added');
+      toast(lines.length > 1 ? `Added ${lines.length} items` : 'Item added');
     } catch {
       toast('Failed to add item', 'error');
+    }
+  }
+
+  function handleChildTextareaKeyDown(e, addHandler) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target;
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? 0;
+      const currentValue = target.value ?? '';
+      const next = `${currentValue.slice(0, start)}\t${currentValue.slice(end)}`;
+      setNewChildTitle(next);
+      requestAnimationFrame(() => {
+        target.selectionStart = start + 1;
+        target.selectionEnd = start + 1;
+      });
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      addHandler();
     }
   }
 
@@ -756,19 +858,29 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
           actions={
             <>
               <button className="btn btn-secondary" onClick={() => setAddingChild(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => handleAddChild(addingChild)} disabled={!newChildTitle.trim()}>
+              <button className="btn btn-primary" onClick={() => handleAddChild(addingChild)} disabled={parseIndentedItemLines(newChildTitle).length === 0}>
                 Add
               </button>
             </>
           }
         >
           <div className="form-group">
-            <label>Title</label>
-            <input value={newChildTitle} onChange={(e) => setNewChildTitle(e.target.value)} autoFocus placeholder="Sub-item title…" />
+            <label>Title(s)</label>
+            <textarea
+              value={newChildTitle}
+              onChange={(e) => setNewChildTitle(e.target.value)}
+              autoFocus
+              rows={4}
+              draggable={false}
+              onMouseDown={e => e.stopPropagation()}
+              placeholder="Type or paste sub-items, one per line. Use tab or 4 spaces for deeper levels…"
+              onKeyDown={e => handleChildTextareaKeyDown(e, () => handleAddChild(addingChild))}
+            />
+            <p style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>One item per line. Tab or 4 spaces creates sub-items. Use Ctrl+Enter to add.</p>
           </div>
           {templateType === 'CHECKLIST' && (
             <div className="form-group">
-              <label>Unit (optional)</label>
+              <label>Unit for all items (optional)</label>
               <input value={newChildUnit} onChange={(e) => setNewChildUnit(e.target.value)} placeholder="Unit…" />
             </div>
           )}

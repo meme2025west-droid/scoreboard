@@ -57,47 +57,42 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
 
   function handleNotesKeyDown(e) {
     if (e.ctrlKey) {
+      const textarea = e.target;
+      const currentValue = textarea.value;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      
       switch (e.key) {
         case 'b':
         case 'B':
           e.preventDefault();
-          const textarea = e.target;
-          const start = textarea.selectionStart;
-          const end = textarea.selectionEnd;
-          const selectedText = editingNotes.substring(start, end);
-          const before = editingNotes.substring(0, start);
-          const after = editingNotes.substring(end);
-          setEditingNotes(before + '**' + (selectedText || 'bold') + '**' + after);
+          const selectedB = currentValue.substring(start, end);
+          const beforeB = currentValue.substring(0, start);
+          const afterB = currentValue.substring(end);
+          setEditingNotes(beforeB + '**' + (selectedB || 'bold') + '**' + afterB);
           break;
         case 'i':
         case 'I':
           e.preventDefault();
-          const ta1 = e.target;
-          const s1 = ta1.selectionStart;
-          const e1 = ta1.selectionEnd;
-          const sel1 = editingNotes.substring(s1, e1);
-          const b1 = editingNotes.substring(0, s1);
-          const a1 = editingNotes.substring(e1);
-          setEditingNotes(b1 + '*' + (sel1 || 'italic') + '*' + a1);
+          const selectedI = currentValue.substring(start, end);
+          const beforeI = currentValue.substring(0, start);
+          const afterI = currentValue.substring(end);
+          setEditingNotes(beforeI + '*' + (selectedI || 'italic') + '*' + afterI);
           break;
         case 'u':
         case 'U':
           e.preventDefault();
-          const ta2 = e.target;
-          const s2 = ta2.selectionStart;
-          const e2 = ta2.selectionEnd;
-          const sel2 = editingNotes.substring(s2, e2);
-          const b2 = editingNotes.substring(0, s2);
-          const a2 = editingNotes.substring(e2);
-          setEditingNotes(b2 + '<u>' + (sel2 || 'underline') + '</u>' + a2);
+          const selectedU = currentValue.substring(start, end);
+          const beforeU = currentValue.substring(0, start);
+          const afterU = currentValue.substring(end);
+          setEditingNotes(beforeU + '<u>' + (selectedU || 'underline') + '</u>' + afterU);
           break;
         case '-':
           e.preventDefault();
-          const ta3 = e.target;
-          const s3 = ta3.selectionStart;
-          const lineStart = editingNotes.lastIndexOf('\n', s3 - 1) + 1;
-          const before3 = editingNotes.substring(0, lineStart);
-          const after3 = editingNotes.substring(lineStart);
+          const s3 = start;
+          const lineStart = currentValue.lastIndexOf('\n', s3 - 1) + 1;
+          const before3 = currentValue.substring(0, lineStart);
+          const after3 = currentValue.substring(lineStart);
           setEditingNotes(before3 + '- ' + after3);
           break;
         default:

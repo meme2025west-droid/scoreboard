@@ -5,6 +5,8 @@ import { useToast } from '../components/common/Toast.jsx';
 import Loading from '../components/common/Loading.jsx';
 import ListsTab from '../components/checklist/ListsTab.jsx';
 import TimelogTab from '../components/timelog/TimelogTab.jsx';
+import ChecklistAnalysisTab from '../components/checklist/ChecklistAnalysisTab.jsx';
+import ScorecardAnalysisTab from '../components/timelog/ScorecardAnalysisTab.jsx';
 
 const TIMEZONES = [
   'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
@@ -23,9 +25,12 @@ export default function UserPage() {
   const [tz, setTz] = useState('');
 
   const requestedTab = searchParams.get('tab');
-  const tab = requestedTab === 'timelog' ? 'timelog' : 'lists';
+  const validTabs = ['lists', 'timelog', 'checklist-analysis', 'scorecard-analysis'];
+  const tab = validTabs.includes(requestedTab) ? requestedTab : 'lists';
   const tallyActive = tab === 'timelog' && searchParams.get('starredOnly') === 'true';
   const timelogActive = tab === 'timelog' && !tallyActive;
+  const checklistAnalysisActive = tab === 'checklist-analysis';
+  const scorecardAnalysisActive = tab === 'scorecard-analysis';
 
   useEffect(() => {
     getUser(token)
@@ -116,6 +121,8 @@ export default function UserPage() {
 
         {tab === 'lists' && <ListsTab token={token} user={user} />}
         {tab === 'timelog' && <TimelogTab token={token} user={user} />}
+        {tab === 'checklist-analysis' && <ChecklistAnalysisTab token={token} />}
+        {tab === 'scorecard-analysis' && <ScorecardAnalysisTab token={token} />}
       </div>
     </div>
   );

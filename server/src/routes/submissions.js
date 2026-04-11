@@ -61,6 +61,82 @@ router.get('/list/:listId', async (req, res) => {
   }
 });
 
+// Detailed analytics for a list (all submissions with individual values)
+router.get('/list/:listId/detailed-analytics', async (req, res) => {
+  try {
+    const list = await prisma.list.findUnique({
+      where: { id: req.params.listId },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+      },
+    });
+    if (!list) return res.status(404).json({ error: 'List not found' });
+
+    const { from, to } = req.query;
+    const fromDate = from ? startOfDay(from) : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const toDate = to ? endOfDay(to) : endOfDay(new Date());
+
+    const submissions = await prisma.submission.findMany({
+      where: {
+        listId: req.params.listId,
+        submittedAt: {
+          gte: fromDate,
+          lte: toDate,
+        },
+      },
+      include: {
+        items: true,
+      },
+      orderBy: { submittedAt: 'asc' },
+    });
+
+    // Group submissions by date
+    const submissionsByDate = {};
+    submissions.forEach(sub => {
+      const dateStr = sub.submittedAt.toISOString().slice(0, 10);
+      if (!submissionsByDate[dateStr]) {
+        submissionsByDate[dateStr] = sub;
+      }
+    });
+    const dates = Object.keys(submissionsByDate).sort();
+
+    // For each item, build values per date
+    const itemData = list.items.map(item => {
+      const valuesByDate = {};
+      dates.forEach(date => {
+        const sub = submissionsByDate[date];
+        if (sub) {
+          const subItem = sub.items.find(si => si.itemId === item.id);
+          if (subItem) {
+            valuesByDate[date] = {
+              checked: subItem.checked ?? null,
+              score: subItem.score ?? null,
+              numberValue: subItem.numberValue ?? null,
+            };
+          }
+        }
+      });
+
+      return {
+        id: item.id,
+        parentId: item.parentId,
+        title: item.title,
+        unit: item.unit,
+        valuesByDate,
+      };
+    });
+
+    res.json({
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      dates,
+      items: itemData,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Checklist analytics for a list in a date range
 router.get('/list/:listId/analytics', async (req, res) => {
   try {

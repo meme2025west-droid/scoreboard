@@ -271,6 +271,16 @@ export default function ListsTab({ token }) {
     <div className="two-col">
       {/* Sidebar */}
       <div className="card sidebar">
+        {selected && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            {selected.type === 'CHECKLIST' && (
+              <a href={`?tab=checklist-analysis`} className="btn btn-secondary btn-sm" style={{ flex: 1 }}>📊 Analysis</a>
+            )}
+            {selected.type === 'SCORECARD' && (
+              <a href={`?tab=scorecard-analysis`} className="btn btn-secondary btn-sm" style={{ flex: 1 }}>📊 Analysis</a>
+            )}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
           <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => { setNewParentId(null); setShowNew(true); }}>+ New</button>
           <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={loadTemplates}>Templates</button>

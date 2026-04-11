@@ -65,7 +65,8 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
       const target = e.target;
       const start = target.selectionStart ?? 0;
       const end = target.selectionEnd ?? 0;
-      const next = `${newItemTitle.slice(0, start)}\t${newItemTitle.slice(end)}`;
+      const currentValue = target.value ?? '';
+      const next = `${currentValue.slice(0, start)}\t${currentValue.slice(end)}`;
       setNewItemTitle(next);
       requestAnimationFrame(() => {
         target.selectionStart = start + 1;
@@ -416,6 +417,8 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
               placeholder="Type or paste items (one per line). Use tab or 4 spaces to indent sub-items…"
               autoFocus
               rows={4}
+              draggable={false}
+              onMouseDown={e => e.stopPropagation()}
               onKeyDown={e => handleIndentedTextareaKeyDown(e, () => handleAddItem('root'))}
               style={{ width: '100%' }}
             />
@@ -449,6 +452,8 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
                 onChange={e => setNewItemTitle(e.target.value)}
                 autoFocus
                 rows={4}
+                draggable={false}
+                onMouseDown={e => e.stopPropagation()}
                 placeholder="Type or paste sub-items, one per line. Use tab or 4 spaces for deeper levels…"
                 onKeyDown={e => handleIndentedTextareaKeyDown(e, () => handleAddItem(addingItem))}
               />

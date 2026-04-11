@@ -59,6 +59,25 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
     setValues(v => ({ ...v, [itemId]: { ...v[itemId], [field]: val } }));
   }
 
+  function handleIndentedTextareaKeyDown(e, addHandler) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target;
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? 0;
+      const next = `${newItemTitle.slice(0, start)}\t${newItemTitle.slice(end)}`;
+      setNewItemTitle(next);
+      requestAnimationFrame(() => {
+        target.selectionStart = start + 1;
+        target.selectionEnd = start + 1;
+      });
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      addHandler();
+    }
+  }
+
   function toggleCollapsedInTree(nodes, itemId) {
     return nodes.map((n) => {
       if (n.id === itemId) {
@@ -131,18 +150,57 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
   }
 
   async function handleAddItem(parentId) {
-    if (!newItemTitle.trim()) return;
+    const lines = newItemTitle
+      .split(/\r?\n/)
+      .map((line) => {
+        const match = line.match(/^[\t ]*/);
+        const indent = match ? match[0] : '';
+        const tabs = (indent.match(/\t/g) || []).length;
+        const spaces = (indent.match(/ /g) || []).length;
+        const depth = tabs + Math.floor(spaces / 4);
+        return { title: line.trim(), depth };
+      })
+      .filter((entry) => entry.title);
+    if (lines.length === 0) return;
     if (!(await ensureDetachedForEdit('add items'))) return;
     try {
-      const item = await addListItem(listId, {
-        title: newItemTitle,
-        parentId: parentId === 'root' ? null : parentId,
-        unit: isChecklist ? (newItemUnit || null) : null,
+      const created = [];
+      const baseParentId = parentId === 'root' ? null : parentId;
+      const parentStack = [];
+      let prevDepth = 0;
+
+      for (const entry of lines) {
+        const desiredDepth = Number.isInteger(entry.depth) ? entry.depth : 0;
+        const safeDepth = Math.min(desiredDepth, prevDepth + 1);
+        const effectiveDepth = Math.max(0, safeDepth);
+
+        const itemParentId = effectiveDepth === 0
+          ? baseParentId
+          : (parentStack[effectiveDepth - 1] || baseParentId);
+
+        const item = await addListItem(listId, {
+          title: entry.title,
+          parentId: itemParentId,
+          unit: isChecklist ? (newItemUnit || null) : null,
+        });
+        created.push(item);
+        parentStack[effectiveDepth] = item.id;
+        parentStack.length = effectiveDepth + 1;
+        prevDepth = effectiveDepth;
+      }
+      setValues(v => {
+        const next = { ...v };
+        for (const item of created) {
+          next[item.id] = { checked: false, score: null, comment: '', numberValue: '' };
+        }
+        return next;
       });
-      setValues(v => ({ ...v, [item.id]: { checked: false, score: null, comment: '', numberValue: '' } }));
       setAddingItem(null);
       setNewItemTitle('');
       setNewItemUnit('');
+      if (created.length > 1) {
+        toast(`Added ${created.length} items`);
+      }
       loadList();
     } catch { toast('Failed to add item', 'error'); }
   }
@@ -351,14 +409,22 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
 
         {/* Add root item */}
         {addingItem === 'root' ? (
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} placeholder="Item title…" autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleAddItem('root')}
-              style={{ flex: 2 }}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+            <textarea
+              value={newItemTitle}
+              onChange={e => setNewItemTitle(e.target.value)}
+              placeholder="Type or paste items (one per line). Use tab or 4 spaces to indent sub-items…"
+              autoFocus
+              rows={4}
+              onKeyDown={e => handleIndentedTextareaKeyDown(e, () => handleAddItem('root'))}
+              style={{ width: '100%' }}
             />
-            {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit (optional)" style={{ flex: 1 }} />}
-            <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
+            {isChecklist && <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit for all items (optional)" style={{ width: '100%' }} />}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => handleAddItem('root')}>Add</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(null)}>✕</button>
+              <span style={{ fontSize: 12, color: 'var(--text2)', alignSelf: 'center' }}>Tip: one per line, tab/4 spaces indents sub-items, Ctrl+Enter adds</span>
+            </div>
           </div>
         ) : (
           <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={() => handleStartAddItem('root')}>
@@ -377,12 +443,20 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
             }
           >
             <div className="form-group">
-              <label>Title</label>
-              <input value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)} autoFocus placeholder="Sub-item title…" />
+              <label>Title(s)</label>
+              <textarea
+                value={newItemTitle}
+                onChange={e => setNewItemTitle(e.target.value)}
+                autoFocus
+                rows={4}
+                placeholder="Type or paste sub-items, one per line. Use tab or 4 spaces for deeper levels…"
+                onKeyDown={e => handleIndentedTextareaKeyDown(e, () => handleAddItem(addingItem))}
+              />
+              <p style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>One item per line. Tab or 4 spaces creates sub-items. Use Ctrl+Enter to add.</p>
             </div>
             {isChecklist && (
               <div className="form-group">
-                <label>Unit (optional, e.g. "kg", "reps")</label>
+                <label>Unit for all items (optional, e.g. "kg", "reps")</label>
                 <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit…" />
               </div>
             )}

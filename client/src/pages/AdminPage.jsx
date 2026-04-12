@@ -10,6 +10,10 @@ import {
   updateTemplateItem,
   moveTemplateItem,
   deleteTemplateItem,
+  addTemplateProject,
+  updateTemplateProject,
+  moveTemplateProject,
+  deleteTemplateProject,
 } from '../api/templates.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
@@ -17,6 +21,8 @@ import Modal from '../components/common/Modal.jsx';
 function fmt(d) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
+const PROJECT_TEMPLATE_COLORS = ['#6c63ff', '#4a9eff', '#4caf7d', '#f5a623', '#f06565', '#a78bfa', '#ff6b9d', '#00c9a7'];
 
 function buildTemplateTree(items) {
   const map = {};
@@ -614,39 +620,54 @@ export default function AdminPage() {
                   <button className="btn btn-danger btn-sm" onClick={() => handleDeleteTemplate(selectedTemplate.id)}>Delete</button>
                 </div>
 
-                <div className="section-title" style={{ marginBottom: 10, fontSize: 14 }}>Items</div>
-                <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
-                  Adding/editing items here automatically syncs all linked lists.
-                </p>
+                {selectedTemplate.type === 'TIMELOG' ? (
+                  <>
+                    <div className="section-title" style={{ marginBottom: 10, fontSize: 14 }}>Project set</div>
+                    <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+                      Editing this tree updates the timelog project set users can apply from their timelog page.
+                    </p>
+                    <TemplateProjectsList
+                      adminToken={adminToken}
+                      templateId={selectedTemplate.id}
+                      refreshKey={templateItemsVersion}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <div className="section-title" style={{ marginBottom: 10, fontSize: 14 }}>Items</div>
+                    <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+                      Adding/editing items here automatically syncs all linked lists.
+                    </p>
 
-                {/* Template items list — load fresh */}
-                <TemplateItemsList
-                  adminToken={adminToken}
-                  templateId={selectedTemplate.id}
-                  templateType={selectedTemplate.type}
-                  refreshKey={templateItemsVersion}
-                />
+                    <TemplateItemsList
+                      adminToken={adminToken}
+                      templateId={selectedTemplate.id}
+                      templateType={selectedTemplate.type}
+                      refreshKey={templateItemsVersion}
+                    />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
-                  <textarea
-                    value={newItemTitle}
-                    onChange={e => setNewItemTitle(e.target.value)}
-                    placeholder="Type or paste items, one per line. Use tab or 4 spaces for sub-items…"
-                    rows={4}
-                    draggable={false}
-                    onMouseDown={e => e.stopPropagation()}
-                    onKeyDown={handleAddTextareaKeyDown}
-                  />
-                  {selectedTemplate.type === 'CHECKLIST' && (
-                    <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit for all items (optional)" style={{ width: 180 }} />
-                  )}
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={() => handleAddTemplateItem(selectedTemplate.id)}>
-                      + Add
-                    </button>
-                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>Tip: one per line, tab/4 spaces indents, Ctrl+Enter adds</span>
-                  </div>
-                </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+                      <textarea
+                        value={newItemTitle}
+                        onChange={e => setNewItemTitle(e.target.value)}
+                        placeholder="Type or paste items, one per line. Use tab or 4 spaces for sub-items…"
+                        rows={4}
+                        draggable={false}
+                        onMouseDown={e => e.stopPropagation()}
+                        onKeyDown={handleAddTextareaKeyDown}
+                      />
+                      {selectedTemplate.type === 'CHECKLIST' && (
+                        <input value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)} placeholder="Unit for all items (optional)" style={{ width: 180 }} />
+                      )}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={() => handleAddTemplateItem(selectedTemplate.id)}>
+                          + Add
+                        </button>
+                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>Tip: one per line, tab/4 spaces indents, Ctrl+Enter adds</span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -884,6 +905,442 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
               <input value={newChildUnit} onChange={(e) => setNewChildUnit(e.target.value)} placeholder="Unit…" />
             </div>
           )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function TemplateProjectRow({
+  project,
+  editMode,
+  onUpdate,
+  onMove,
+  onOutdent,
+  onDelete,
+  onAddChild,
+  depth = 0,
+  parentId = null,
+  index = 0,
+  siblingsCount = 1,
+  dragState: sharedDragState,
+  setDragState: setSharedDragState,
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(project.title);
+  const [editColor, setEditColor] = useState(project.color || PROJECT_TEMPLATE_COLORS[0]);
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const dragState = sharedDragState || localDragState;
+  const setDragState = setSharedDragState || setLocalDragState;
+  const beforeZoneKey = `zone:${parentId ?? 'root'}:${index}`;
+  const nodeDropKey = `node:${project.id}`;
+  const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
+
+  useEffect(() => {
+    setEditTitle(project.title);
+    setEditColor(project.color || PROJECT_TEMPLATE_COLORS[0]);
+  }, [project.id, project.title, project.color]);
+
+  async function saveProject() {
+    const nextTitle = editTitle.trim();
+    if (!nextTitle) {
+      setEditTitle(project.title);
+      setEditColor(project.color || PROJECT_TEMPLATE_COLORS[0]);
+      setEditing(false);
+      return;
+    }
+
+    if (nextTitle !== project.title || (editColor || null) !== (project.color || null)) {
+      await onUpdate(project.id, { title: nextTitle, color: editColor || null });
+    }
+
+    setEditing(false);
+  }
+
+  return (
+    <div>
+      {editMode && (
+        <DropZone
+          depth={depth}
+          isActive={dragState.draggedId && dragState.dropTargetKey === beforeZoneKey}
+          onDragOver={() => {
+            if (dragState.dropTargetKey !== beforeZoneKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: beforeZoneKey }));
+            }
+          }}
+          onDrop={(draggedId) => {
+            onMove(draggedId, parentId, index);
+            setDragState({ draggedId: null, dropTargetKey: null });
+          }}
+        />
+      )}
+
+      <div
+        className={`list-item-row ${dragState.draggedId && dragState.draggedId !== project.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
+        draggable={editMode}
+        onDragStart={(e) => {
+          if (!editMode) return;
+          e.dataTransfer.setData('text/plain', project.id);
+          e.dataTransfer.effectAllowed = 'move';
+          setDragState({ draggedId: project.id, dropTargetKey: null });
+        }}
+        onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
+        onDragOver={(e) => {
+          if (editMode) {
+            e.preventDefault();
+            if (dragState.dropTargetKey !== nodeDropKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: nodeDropKey }));
+            }
+          }
+        }}
+        onDrop={(e) => {
+          if (!editMode) return;
+          e.preventDefault();
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (draggedId && draggedId !== project.id) {
+            onMove(draggedId, project.id, project.children?.length || 0);
+          }
+          setDragState({ draggedId: null, dropTargetKey: null });
+        }}
+      >
+        <span style={{ width: 18 }} />
+        <span style={{ width: 12, height: 12, borderRadius: '50%', background: project.color || 'var(--accent)', flexShrink: 0 }} />
+
+        <div className="list-item-title">
+          {editing ? (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onBlur={saveProject}
+                onKeyDown={(e) => e.key === 'Enter' && saveProject()}
+                autoFocus
+                style={{ minWidth: 220, flex: '1 1 220px', background: 'transparent', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 4, fontSize: 14 }}
+              />
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                {PROJECT_TEMPLATE_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setEditColor(color)}
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      border: editColor === color ? '2px solid var(--text1)' : '1px solid var(--border)',
+                      background: color,
+                      cursor: 'pointer',
+                    }}
+                    title="Set color"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <span onDoubleClick={() => setEditing(true)}>
+              {project.title}
+            </span>
+          )}
+        </div>
+
+        {editMode && (
+          <>
+            <button className="btn-icon" style={{ fontSize: 13 }} onClick={() => onOutdent(project.id)} title="Outdent one level">
+              ⇤
+            </button>
+            <button className="btn-icon" style={{ fontSize: 14 }} onClick={() => onAddChild(project.id)} title="Add sub-project">
+              ⊕
+            </button>
+            <button className="btn-icon" style={{ color: 'var(--red)', fontSize: 14 }} onClick={() => onDelete(project.id)} title="Delete project">
+              ✕
+            </button>
+          </>
+        )}
+      </div>
+
+      {project.children?.length > 0 && (
+        <div className="list-item-children">
+          {project.children.map((child, childIndex) => (
+            <TemplateProjectRow
+              key={child.id}
+              project={child}
+              editMode={editMode}
+              onUpdate={onUpdate}
+              onMove={onMove}
+              onOutdent={onOutdent}
+              onDelete={onDelete}
+              onAddChild={onAddChild}
+              depth={depth + 1}
+              parentId={project.id}
+              index={childIndex}
+              siblingsCount={project.children.length}
+              dragState={dragState}
+              setDragState={setDragState}
+            />
+          ))}
+        </div>
+      )}
+
+      {editMode && index === siblingsCount - 1 && (
+        <DropZone
+          depth={depth}
+          isActive={dragState.draggedId && dragState.dropTargetKey === afterZoneKey}
+          onDragOver={() => {
+            if (dragState.dropTargetKey !== afterZoneKey) {
+              setDragState((prev) => ({ ...prev, dropTargetKey: afterZoneKey }));
+            }
+          }}
+          onDrop={(draggedId) => {
+            onMove(draggedId, parentId, siblingsCount);
+            setDragState({ draggedId: null, dropTargetKey: null });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
+  const toast = useToast();
+  const [projects, setProjects] = useState([]);
+  const [editMode, setEditMode] = useState(false);
+  const [addingChild, setAddingChild] = useState(null);
+  const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [newProjectColor, setNewProjectColor] = useState(PROJECT_TEMPLATE_COLORS[0]);
+  const [newRootTitle, setNewRootTitle] = useState('');
+  const [newRootColor, setNewRootColor] = useState(PROJECT_TEMPLATE_COLORS[0]);
+
+  useEffect(() => {
+    setEditMode(false);
+    setAddingChild(null);
+    setNewProjectTitle('');
+    setNewRootTitle('');
+    setNewProjectColor(PROJECT_TEMPLATE_COLORS[0]);
+    setNewRootColor(PROJECT_TEMPLATE_COLORS[0]);
+  }, [templateId]);
+
+  useEffect(() => { loadProjects(); }, [templateId, refreshKey]);
+
+  async function loadProjects() {
+    try {
+      const tmpl = await getTemplate(templateId);
+      setProjects(tmpl.templateProjects || []);
+    } catch {
+      toast('Failed to load template projects', 'error');
+    }
+  }
+
+  async function handleUpdateProject(projectId, data) {
+    try {
+      await updateTemplateProject(adminToken, projectId, data);
+      await loadProjects();
+    } catch {
+      toast('Failed to update project', 'error');
+    }
+  }
+
+  async function handleMoveProject(projectId, newParentId, newIndex) {
+    try {
+      await moveTemplateProject(adminToken, projectId, { newParentId, newIndex });
+      await loadProjects();
+    } catch (error) {
+      toast(error?.response?.data?.error || 'Failed to move project', 'error');
+    }
+  }
+
+  async function handleDeleteProject(projectId) {
+    if (!confirm('Delete this project and its sub-projects?')) return;
+
+    try {
+      await deleteTemplateProject(adminToken, projectId);
+      await loadProjects();
+    } catch {
+      toast('Failed to delete project', 'error');
+    }
+  }
+
+  async function createProjectsFromLines(rawTitle, color, parentId = null) {
+    const lines = parseIndentedItemLines(rawTitle);
+    if (lines.length === 0) return false;
+
+    const baseParentId = parentId;
+    const parentStack = [];
+    let prevDepth = 0;
+
+    for (const entry of lines) {
+      const desiredDepth = Number.isInteger(entry.depth) ? entry.depth : 0;
+      const safeDepth = Math.min(desiredDepth, prevDepth + 1);
+      const effectiveDepth = Math.max(0, safeDepth);
+      const projectParentId = effectiveDepth === 0 ? baseParentId : (parentStack[effectiveDepth - 1] || baseParentId);
+
+      const created = await addTemplateProject(adminToken, templateId, {
+        title: entry.title,
+        parentId: projectParentId,
+        color,
+      });
+
+      parentStack[effectiveDepth] = created.id;
+      parentStack.length = effectiveDepth + 1;
+      prevDepth = effectiveDepth;
+    }
+
+    await loadProjects();
+    toast(lines.length > 1 ? `Added ${lines.length} projects` : 'Project added');
+    return true;
+  }
+
+  async function handleAddRootProject() {
+    const created = await createProjectsFromLines(newRootTitle, newRootColor, null);
+    if (created) {
+      setNewRootTitle('');
+    }
+  }
+
+  async function handleAddChildProject(parentId) {
+    const created = await createProjectsFromLines(newProjectTitle, newProjectColor, parentId);
+    if (created) {
+      setAddingChild(null);
+      setNewProjectTitle('');
+      setNewProjectColor(PROJECT_TEMPLATE_COLORS[0]);
+    }
+  }
+
+  function handleProjectTextareaKeyDown(e, value, setValue, submit) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target;
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? 0;
+      const next = `${value.slice(0, start)}\t${value.slice(end)}`;
+      setValue(next);
+      requestAnimationFrame(() => {
+        target.selectionStart = start + 1;
+        target.selectionEnd = start + 1;
+      });
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      submit();
+    }
+  }
+
+  async function handleOutdentProject(projectId) {
+    const tree = buildTemplateTree(projects);
+    const ctx = findNodeWithContext(tree, projectId);
+    if (!ctx || !ctx.parent) return;
+
+    const parentCtx = findNodeWithContext(tree, ctx.parent.id);
+    const newParentId = parentCtx?.parent ? parentCtx.parent.id : null;
+    const newIndex = (parentCtx?.index ?? 0) + 1;
+    await handleMoveProject(projectId, newParentId, newIndex);
+  }
+
+  const tree = buildTemplateTree(projects);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button
+          className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
+          onClick={() => setEditMode((current) => !current)}
+        >
+          {editMode ? '✓ Done' : '✎ Edit'}
+        </button>
+      </div>
+
+      {projects.length === 0 && <p style={{ color: 'var(--text3)', fontSize: 14 }}>No template projects yet.</p>}
+
+      {tree.map((project, index) => (
+        <TemplateProjectRow
+          key={project.id}
+          project={project}
+          editMode={editMode}
+          onUpdate={handleUpdateProject}
+          onMove={handleMoveProject}
+          onOutdent={handleOutdentProject}
+          onDelete={handleDeleteProject}
+          onAddChild={(parentId) => {
+            setAddingChild(parentId);
+            setNewProjectTitle('');
+            setNewProjectColor(PROJECT_TEMPLATE_COLORS[0]);
+          }}
+          parentId={null}
+          index={index}
+          siblingsCount={tree.length}
+        />
+      ))}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+        <textarea
+          value={newRootTitle}
+          onChange={(e) => setNewRootTitle(e.target.value)}
+          placeholder="Type or paste projects, one per line. Use tab or 4 spaces for sub-projects…"
+          rows={4}
+          draggable={false}
+          onMouseDown={e => e.stopPropagation()}
+          onKeyDown={e => handleProjectTextareaKeyDown(e, newRootTitle, setNewRootTitle, handleAddRootProject)}
+        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Color</span>
+          {PROJECT_TEMPLATE_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className="color-swatch"
+              style={{ background: color, opacity: newRootColor === color ? 1 : 0.55, border: newRootColor === color ? '2px solid var(--text1)' : '1px solid var(--border)' }}
+              onClick={() => setNewRootColor(color)}
+            />
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={handleAddRootProject}>
+            + Add projects
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Tip: one per line, tab/4 spaces indents, Ctrl+Enter adds</span>
+        </div>
+      </div>
+
+      {addingChild && (
+        <Modal
+          title="Add sub-project"
+          onClose={() => setAddingChild(null)}
+          actions={
+            <>
+              <button className="btn btn-secondary" onClick={() => setAddingChild(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => handleAddChildProject(addingChild)} disabled={parseIndentedItemLines(newProjectTitle).length === 0}>
+                Add
+              </button>
+            </>
+          }
+        >
+          <div className="form-group">
+            <label>Project name(s)</label>
+            <textarea
+              value={newProjectTitle}
+              onChange={(e) => setNewProjectTitle(e.target.value)}
+              autoFocus
+              rows={4}
+              draggable={false}
+              onMouseDown={e => e.stopPropagation()}
+              placeholder="Type or paste sub-projects, one per line. Use tab or 4 spaces for deeper levels…"
+              onKeyDown={e => handleProjectTextareaKeyDown(e, newProjectTitle, setNewProjectTitle, () => handleAddChildProject(addingChild))}
+            />
+            <p style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>One project per line. Tab or 4 spaces creates sub-projects. Use Ctrl+Enter to add.</p>
+          </div>
+          <div className="form-group">
+            <label>Color</label>
+            <div className="color-picker-row">
+              {PROJECT_TEMPLATE_COLORS.map((color) => (
+                <div
+                  key={color}
+                  className={`color-swatch ${newProjectColor === color ? 'selected' : ''}`}
+                  style={{ background: color }}
+                  onClick={() => setNewProjectColor(color)}
+                />
+              ))}
+            </div>
+          </div>
         </Modal>
       )}
     </div>

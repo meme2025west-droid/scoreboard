@@ -49,6 +49,53 @@ function buildTree(items) {
   return roots;
 }
 
+async function createProjectsFromTemplate(userId, templateId) {
+  const template = await prisma.template.findUnique({
+    where: { id: templateId },
+    include: {
+      templateProjects: {
+        orderBy: [
+          { position: 'asc' },
+          { id: 'asc' },
+        ],
+      },
+    },
+  });
+
+  if (!template) {
+    throw Object.assign(new Error('Template not found'), { status: 404 });
+  }
+  if (template.type !== 'TIMELOG') {
+    throw Object.assign(new Error('Template is not a timelog project set'), { status: 400 });
+  }
+
+  const projectIdsByTemplateProjectId = {};
+  for (const templateProject of template.templateProjects) {
+    const project = await prisma.project.create({
+      data: {
+        userId,
+        title: templateProject.title,
+        color: templateProject.color || null,
+        position: templateProject.position,
+        parentId: null,
+        templateProjectId: templateProject.id,
+      },
+    });
+    projectIdsByTemplateProjectId[templateProject.id] = project.id;
+  }
+
+  for (const templateProject of template.templateProjects) {
+    if (templateProject.parentId && projectIdsByTemplateProjectId[templateProject.parentId]) {
+      await prisma.project.update({
+        where: { id: projectIdsByTemplateProjectId[templateProject.id] },
+        data: { parentId: projectIdsByTemplateProjectId[templateProject.parentId] },
+      });
+    }
+  }
+
+  return template.templateProjects.length;
+}
+
 // Get all projects for a user
 router.get('/user/:token', async (req, res) => {
   try {
@@ -88,6 +135,18 @@ router.post('/user/:token', async (req, res) => {
     res.json(project);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/user/:token/from-template/:templateId', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { token: req.params.token } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const createdCount = await createProjectsFromTemplate(user.id, req.params.templateId);
+    res.json({ ok: true, createdCount });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 

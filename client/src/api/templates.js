@@ -19,3 +19,11 @@ export const moveTemplateItem = (adminToken, itemId, data) =>
   api.post(`/templates/items/${itemId}/move`, data, adminHeaders(adminToken)).then(r => r.data);
 export const deleteTemplateItem = (adminToken, itemId) =>
   api.delete(`/templates/items/${itemId}`, adminHeaders(adminToken)).then(r => r.data);
+export const addTemplateProject = (adminToken, id, data) =>
+  api.post(`/templates/${id}/projects`, data, adminHeaders(adminToken)).then(r => r.data);
+export const updateTemplateProject = (adminToken, projectId, data) =>
+  api.patch(`/templates/projects/${projectId}`, data, adminHeaders(adminToken)).then(r => r.data);
+export const moveTemplateProject = (adminToken, projectId, data) =>
+  api.post(`/templates/projects/${projectId}/move`, data, adminHeaders(adminToken)).then(r => r.data);
+export const deleteTemplateProject = (adminToken, projectId) =>
+  api.delete(`/templates/projects/${projectId}`, adminHeaders(adminToken)).then(r => r.data);

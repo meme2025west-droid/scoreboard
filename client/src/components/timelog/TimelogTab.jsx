@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getUserProjects, createProject, deleteProject, moveProject, updateProject } from '../../api/projects.js';
+import { getUserProjects, createProject, createProjectsFromTemplate, deleteProject, moveProject, updateProject } from '../../api/projects.js';
 import { getTimelog, getLastEntry, createEntry, updateEntry, deleteEntry } from '../../api/timelog.js';
 import { createEffortEntry, getEffortAnalytics } from '../../api/effort.js';
+import { getTemplates } from '../../api/templates.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
 import Modal from '../common/Modal.jsx';
@@ -108,6 +109,10 @@ export default function TimelogTab({ token, user }) {
 
   // Project form
   const [showNewProject, setShowNewProject] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [timelogTemplates, setTimelogTemplates] = useState([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [applyingTemplateId, setApplyingTemplateId] = useState(null);
   const [newProjTitle, setNewProjTitle] = useState('');
   const [newProjParent, setNewProjParent] = useState(null);
   const [newProjColor, setNewProjColor] = useState(COLORS[0]);
@@ -278,6 +283,41 @@ export default function TimelogTab({ token, user }) {
       setNewProjParent(null);
     } catch {
       toast('Failed to create project', 'error');
+    }
+  }
+
+  async function openTemplatePicker() {
+    setShowTemplatePicker(true);
+    if (timelogTemplates.length > 0 || loadingTemplates) return;
+
+    setLoadingTemplates(true);
+    try {
+      const templates = await getTemplates();
+      setTimelogTemplates(templates.filter((template) => template.type === 'TIMELOG'));
+    } catch {
+      toast('Failed to load project sets', 'error');
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }
+
+  async function handleApplyTemplate(template) {
+    setApplyingTemplateId(template.id);
+    try {
+      await createProjectsFromTemplate(token, template.id);
+      await refreshProjects();
+      setShowStarredOnly(false);
+      try {
+        localStorage.setItem(getStarredOnlyStorageKey(token), 'false');
+      } catch {
+        // Ignore storage errors
+      }
+      setShowTemplatePicker(false);
+      toast(`Applied ${template.title}`);
+    } catch (error) {
+      toast(error?.response?.data?.error || 'Failed to apply project set', 'error');
+    } finally {
+      setApplyingTemplateId(null);
     }
   }
 
@@ -478,7 +518,10 @@ export default function TimelogTab({ token, user }) {
               </>
             )}
         <div style={{ marginTop: 12 }}>
-          <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => setShowNewProject(true)}>+ Add</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => setShowNewProject(true)}>+ Add</button>
+            <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={openTemplatePicker}>Templates</button>
+          </div>
         </div>
       </div>
 
@@ -565,6 +608,46 @@ export default function TimelogTab({ token, user }) {
               ))}
             </div>
           </div>
+        </Modal>
+      )}
+
+      {showTemplatePicker && (
+        <Modal
+          title="Project set templates"
+          onClose={() => !applyingTemplateId && setShowTemplatePicker(false)}
+          actions={(
+            <button className="btn btn-secondary" onClick={() => setShowTemplatePicker(false)} disabled={Boolean(applyingTemplateId)}>
+              Close
+            </button>
+          )}
+        >
+          {loadingTemplates ? (
+            <p style={{ color: 'var(--text3)' }}>Loading templates…</p>
+          ) : timelogTemplates.length === 0 ? (
+            <p style={{ color: 'var(--text3)' }}>No timelog project sets are available yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {timelogTemplates.map((template) => (
+                <div key={template.id} className="card" style={{ padding: 14, margin: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{template.title}</div>
+                      {template.description && (
+                        <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{template.description}</div>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleApplyTemplate(template)}
+                      disabled={applyingTemplateId === template.id}
+                    >
+                      {applyingTemplateId === template.id ? 'Applying…' : 'Apply'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Modal>
       )}
 

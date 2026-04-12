@@ -375,4 +375,176 @@ router.delete('/items/:itemId', async (req, res) => {
   }
 });
 
+router.post('/:id/projects', async (req, res) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { title, parentId, color } = req.body;
+    const template = await prisma.template.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, type: true },
+    });
+    if (!template) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (template.type !== 'TIMELOG') {
+      return res.status(400).json({ error: 'Template is not a timelog project set' });
+    }
+
+    const maxPos = await prisma.templateProject.aggregate({
+      where: { templateId: req.params.id, parentId: parentId || null },
+      _max: { position: true },
+    });
+
+    const project = await prisma.templateProject.create({
+      data: {
+        templateId: req.params.id,
+        title,
+        parentId: parentId || null,
+        color: color || null,
+        position: (maxPos._max.position ?? -1) + 1,
+      },
+    });
+
+    res.json(project);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/projects/:projectId', async (req, res) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const existing = await prisma.templateProject.findUnique({ where: { id: req.params.projectId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const { title, color, position, parentId } = req.body;
+    const project = await prisma.templateProject.update({
+      where: { id: req.params.projectId },
+      data: {
+        ...(title !== undefined && { title }),
+        ...(color !== undefined && { color }),
+        ...(position !== undefined && { position }),
+        ...(parentId !== undefined && { parentId }),
+      },
+    });
+
+    res.json(project);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/projects/:projectId/move', async (req, res) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { newParentId, newIndex } = req.body;
+    const moving = await prisma.templateProject.findUnique({ where: { id: req.params.projectId } });
+    if (!moving) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const allProjects = await prisma.templateProject.findMany({
+      where: { templateId: moving.templateId },
+      select: { id: true, parentId: true, position: true },
+      orderBy: [
+        { position: 'asc' },
+        { id: 'asc' },
+      ],
+    });
+
+    const normalizedParentId = newParentId || null;
+    if (normalizedParentId) {
+      const parent = allProjects.find(project => project.id === normalizedParentId);
+      if (!parent) return res.status(400).json({ error: 'New parent not found' });
+      if (parent.id === moving.id) return res.status(400).json({ error: 'Cannot parent project to itself' });
+      if (isDescendant(allProjects, moving.id, normalizedParentId)) {
+        return res.status(400).json({ error: 'Cannot move project under its own descendant' });
+      }
+    }
+
+    const oldParentId = moving.parentId || null;
+    const targetSiblings = allProjects
+      .filter(project => (project.parentId || null) === normalizedParentId && project.id !== moving.id)
+      .sort((a, b) => a.position - b.position)
+      .map(project => project.id);
+
+    const maxIndex = targetSiblings.length;
+    const safeIndex = Math.max(0, Math.min(Number.isInteger(newIndex) ? newIndex : maxIndex, maxIndex));
+    const newSiblingOrder = insertAt(targetSiblings, safeIndex, moving.id);
+
+    const oldSiblings = allProjects
+      .filter(project => (project.parentId || null) === oldParentId && project.id !== moving.id)
+      .sort((a, b) => a.position - b.position)
+      .map(project => project.id);
+
+    await prisma.$transaction(async tx => {
+      await tx.templateProject.update({
+        where: { id: moving.id },
+        data: { parentId: normalizedParentId },
+      });
+
+      if (oldParentId !== normalizedParentId) {
+        for (let index = 0; index < oldSiblings.length; index += 1) {
+          await tx.templateProject.update({
+            where: { id: oldSiblings[index] },
+            data: { position: index },
+          });
+        }
+      }
+
+      for (let index = 0; index < newSiblingOrder.length; index += 1) {
+        await tx.templateProject.update({
+          where: { id: newSiblingOrder[index] },
+          data: { position: index },
+        });
+      }
+    });
+
+    const project = await prisma.templateProject.findUnique({ where: { id: moving.id } });
+    res.json(project);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/projects/:projectId', async (req, res) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const project = await prisma.templateProject.findUnique({ where: { id: req.params.projectId } });
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const templateProjects = await prisma.templateProject.findMany({
+      where: { templateId: project.templateId },
+      select: { id: true, parentId: true },
+    });
+    const deleteIds = collectDescendantIds(templateProjects, project.id);
+
+    await prisma.$transaction(async tx => {
+      for (const deleteId of deleteIds) {
+        await tx.templateProject.delete({ where: { id: deleteId } });
+      }
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

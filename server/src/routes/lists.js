@@ -566,13 +566,20 @@ async function syncListItemsFromTemplate(listId, templateId) {
   }
 
   // Delete orphaned items: those NOT matched to any template item AND with no submissions
+  // Delete leaves first to avoid FK constraint violations (children have onDelete: Restrict)
   const matchedIds = new Set(Object.values(idMap));
-  const orphans = existingItems.filter(li => !matchedIds.has(li.id));
-  for (const orphan of orphans) {
-    const subCount = await prisma.submissionItem.count({ where: { itemId: orphan.id } });
-    if (subCount === 0) {
-      await prisma.listItem.delete({ where: { id: orphan.id } });
+  let orphans = existingItems.filter(li => !matchedIds.has(li.id));
+  while (orphans.length > 0) {
+    // Find leaves: orphans that are not a parent of any other remaining orphan
+    const leaves = orphans.filter(o => !orphans.some(other => other.parentId === o.id));
+    if (leaves.length === 0) break; // cycle guard
+    for (const orphan of leaves) {
+      const subCount = await prisma.submissionItem.count({ where: { itemId: orphan.id } });
+      if (subCount === 0) {
+        await prisma.listItem.delete({ where: { id: orphan.id } });
+      }
     }
+    orphans = orphans.filter(o => !leaves.includes(o));
   }
 
   // Second pass: restore parentId hierarchy

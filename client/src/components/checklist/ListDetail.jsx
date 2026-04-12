@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, syncListFromTemplate, duplicateDetachedList } from '../../api/lists.js';
+import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, duplicateDetachedList } from '../../api/lists.js';
 import { submitList, getSubmissions } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
@@ -343,13 +343,25 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
     await handleMoveItem(itemId, newParentId, newIndex);
   }
 
-  async function handleSync() {
-    if (!confirm('This will replace all items with the latest template. Continue?')) return;
-    try {
-      await syncListFromTemplate(listId);
-      toast('Synced from template');
-      loadList();
-    } catch { toast('Sync failed', 'error'); }
+  async function handleSetAllItemsCollapsed(collapsed) {
+    const items = list?.items || [];
+    const parentIds = new Set(items.map(i => i.parentId).filter(Boolean));
+    const targets = items.filter(i => parentIds.has(i.id));
+    if (targets.length === 0) return;
+    setList((prev) => ({
+      ...prev,
+      items: prev.items.map(i => parentIds.has(i.id) ? { ...i, collapsed } : i),
+      itemsTree: setAllCollapsedInTree(prev.itemsTree || [], parentIds, collapsed),
+    }));
+    await Promise.all(targets.map(i => updateListItem(i.id, { collapsed }).catch(() => {})));
+  }
+
+  function setAllCollapsedInTree(nodes, parentIds, collapsed) {
+    return nodes.map(n => ({
+      ...n,
+      collapsed: parentIds.has(n.id) ? collapsed : n.collapsed,
+      children: n.children ? setAllCollapsedInTree(n.children, parentIds, collapsed) : [],
+    }));
   }
 
   async function handleTypeChange(newType) {
@@ -473,9 +485,12 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
               <option value="SCORECARD">Scorecard</option>
             </select>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {list.templateId && (
-              <button className="btn btn-secondary btn-sm" onClick={handleSync} title="Sync from template">↻ Sync</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(list?.items || []).some(i => (list?.items || []).some(x => x.parentId === i.id)) && (
+              <>
+                <button className="btn btn-secondary btn-sm" onClick={() => handleSetAllItemsCollapsed(false)}>Expand All</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => handleSetAllItemsCollapsed(true)}>Collapse All</button>
+              </>
             )}
             <button
               className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}

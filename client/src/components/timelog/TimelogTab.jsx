@@ -134,6 +134,7 @@ export default function TimelogTab({ token, user }) {
       return false;
     }
   });
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
 
   const requestedView = searchParams.get('timelogView');
   const tab = requestedView === 'analytics' ? 'analytics' : 'log';
@@ -517,6 +518,8 @@ export default function TimelogTab({ token, user }) {
                   onAddTally={(project) => { setTallyProject(project); setTallyComment(''); }}
                   onRename={handleRenameProject}
                   tallyCounts={tallyCounts}
+                  collapsedNodeIds={collapsedNodeIds}
+                  setCollapsedNodeIds={setCollapsedNodeIds}
                 />
               </>
             )}
@@ -524,6 +527,15 @@ export default function TimelogTab({ token, user }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => setShowNewProject(true)}>+ Add</button>
             <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={openTemplatePicker}>Templates</button>
+            {projects.some(p => projects.some(x => x.parentId === p.id)) && (
+              <>
+                <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={() => setCollapsedNodeIds(new Set())}>Expand All</button>
+                <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={() => {
+                  const parentIds = new Set(projects.map(p => p.parentId).filter(Boolean));
+                  setCollapsedNodeIds(parentIds);
+                }}>Collapse All</button>
+              </>
+            )}
           </div>
         </div>
       </div>

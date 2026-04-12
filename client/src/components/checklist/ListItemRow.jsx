@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { useEffect, useRef, useState } from 'react';
 
 function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   return (
@@ -26,6 +25,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   const [showNotes, setShowNotes] = useState(false);
   const [editingNotes, setEditingNotes] = useState(item.notes || '');
   const [savingNotes, setSavingNotes] = useState(false);
+  const notesEditorRef = useRef(null);
   const [localDragState, setLocalDragState] = useState({ draggedId: null, draggedIds: [], dropTargetKey: null });
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
@@ -38,6 +38,14 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
   const isSelected = selectedItemIds?.has?.(item.id) || false;
 
+  useEffect(() => {
+    if (!showNotes || !editMode || !notesEditorRef.current) return;
+
+    const nextNotes = item.notes || '';
+    notesEditorRef.current.innerHTML = nextNotes;
+    setEditingNotes(nextNotes);
+  }, [editMode, item.id, item.notes, showNotes]);
+
   function saveTitle() {
     if (editTitle.trim() && editTitle !== item.title) {
       onUpdate(item.id, { title: editTitle });
@@ -48,7 +56,9 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   async function saveNotes() {
     setSavingNotes(true);
     try {
-      await onUpdate(item.id, { notes: editingNotes });
+      const nextNotes = notesEditorRef.current?.innerHTML ?? editingNotes;
+      await onUpdate(item.id, { notes: nextNotes });
+      setEditingNotes(nextNotes);
       setShowNotes(false);
     } finally {
       setSavingNotes(false);
@@ -56,44 +66,37 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   }
 
   function handleNotesKeyDown(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      document.execCommand('insertText', false, '\t');
+      setEditingNotes(notesEditorRef.current?.innerHTML ?? e.target.innerHTML);
+      return;
+    }
+
     if (e.ctrlKey) {
-      const textarea = e.target;
-      const currentValue = textarea.value;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      
       switch (e.key) {
         case 'b':
         case 'B':
           e.preventDefault();
-          const selectedB = currentValue.substring(start, end);
-          const beforeB = currentValue.substring(0, start);
-          const afterB = currentValue.substring(end);
-          setEditingNotes(beforeB + '**' + (selectedB || 'bold') + '**' + afterB);
+          document.execCommand('bold', false, null);
+          setEditingNotes(notesEditorRef.current?.innerHTML ?? e.target.innerHTML);
           break;
         case 'i':
         case 'I':
           e.preventDefault();
-          const selectedI = currentValue.substring(start, end);
-          const beforeI = currentValue.substring(0, start);
-          const afterI = currentValue.substring(end);
-          setEditingNotes(beforeI + '*' + (selectedI || 'italic') + '*' + afterI);
+          document.execCommand('italic', false, null);
+          setEditingNotes(notesEditorRef.current?.innerHTML ?? e.target.innerHTML);
           break;
         case 'u':
         case 'U':
           e.preventDefault();
-          const selectedU = currentValue.substring(start, end);
-          const beforeU = currentValue.substring(0, start);
-          const afterU = currentValue.substring(end);
-          setEditingNotes(beforeU + '<u>' + (selectedU || 'underline') + '</u>' + afterU);
+          document.execCommand('underline', false, null);
+          setEditingNotes(notesEditorRef.current?.innerHTML ?? e.target.innerHTML);
           break;
         case '-':
           e.preventDefault();
-          const s3 = start;
-          const lineStart = currentValue.lastIndexOf('\n', s3 - 1) + 1;
-          const before3 = currentValue.substring(0, lineStart);
-          const after3 = currentValue.substring(lineStart);
-          setEditingNotes(before3 + '- ' + after3);
+          document.execCommand('insertText', false, '• ');
+          setEditingNotes(notesEditorRef.current?.innerHTML ?? e.target.innerHTML);
           break;
         default:
           break;
@@ -240,12 +243,16 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
           <button className="btn-icon" title="Comment" onClick={() => setShowComment(s => !s)} style={{ fontSize: 14 }}>
             💬
           </button>
-          <button className="btn-icon" title="Add sub-item" onClick={() => onAddChild(item.id)} style={{ fontSize: 14 }}>
-            ⊕
-          </button>
-          <button className="btn-icon" title="Delete" onClick={() => onDelete(item.id)} style={{ color: 'var(--red)', fontSize: 14 }}>
-            ✕
-          </button>
+          {editMode && (
+            <>
+              <button className="btn-icon" title="Add sub-item" onClick={() => onAddChild(item.id)} style={{ fontSize: 14 }}>
+                ⊕
+              </button>
+              <button className="btn-icon" title="Delete" onClick={() => onDelete(item.id)} style={{ color: 'var(--red)', fontSize: 14 }}>
+                ✕
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -254,12 +261,26 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
         <div style={{ paddingLeft: depth * 28 + 54, marginBottom: 6 }}>
           {editMode ? (
             <>
-              <textarea
-                value={editingNotes}
-                onChange={e => setEditingNotes(e.target.value)}
+              <div
+                ref={notesEditorRef}
+                className="notes-rich-text notes-rich-text-editor"
+                contentEditable
+                suppressContentEditableWarning
+                onInput={e => setEditingNotes(e.currentTarget.innerHTML)}
                 onKeyDown={handleNotesKeyDown}
-                placeholder="Add notes (supports markdown)… Ctrl+B: bold, Ctrl+I: italic, Ctrl+U: underline, Ctrl+-: bullet"
-                style={{ fontSize: 13, minHeight: 80 }}
+                style={{
+                  fontSize: 13,
+                  minHeight: 80,
+                  padding: '8px 12px',
+                  background: 'white',
+                  border: '1px solid var(--accent)',
+                  borderRadius: 4,
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word',
+                  overflow: 'auto'
+                }}
               />
               <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                 <button 
@@ -272,7 +293,11 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
                 <button 
                   className="btn btn-secondary btn-sm" 
                   onClick={() => {
-                    setEditingNotes(item.notes || '');
+                    const nextNotes = item.notes || '';
+                    if (notesEditorRef.current) {
+                      notesEditorRef.current.innerHTML = nextNotes;
+                    }
+                    setEditingNotes(nextNotes);
                     setShowNotes(false);
                   }}
                 >
@@ -291,6 +316,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
             }}>
               {item.notes ? (
                 <div 
+                  className="notes-rich-text"
                   dangerouslySetInnerHTML={{ __html: item.notes }} 
                   style={{ fontSize: 13 }}
                 />

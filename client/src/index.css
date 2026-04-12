@@ -259,6 +259,44 @@ label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 4px
 .number-unit-row { display: flex; gap: 6px; align-items: center; }
 .number-unit-row input[type="number"] { width: 80px; }
 
+.notes-rich-text {
+  line-height: 1.5;
+}
+
+.notes-rich-text p {
+  margin: 0 0 8px;
+}
+
+.notes-rich-text p:last-child {
+  margin-bottom: 0;
+}
+
+.notes-rich-text ul,
+.notes-rich-text ol {
+  margin: 0;
+  padding-left: 1.5rem;
+  list-style-position: outside;
+}
+
+.notes-rich-text li {
+  margin: 0 0 4px;
+}
+
+.notes-rich-text li:last-child {
+  margin-bottom: 0;
+}
+
+.notes-rich-text-editor ul,
+.notes-rich-text-editor ol {
+  padding-left: 0.5rem;
+  margin-left: 0.25rem;
+  list-style-position: inside;
+}
+
+.notes-rich-text-editor li {
+  padding-left: 0.35rem;
+}
+
 .submission-item-row { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 6px; background: var(--bg3); }
 .submission-item-meta { font-size: 12px; color: var(--text2); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
 .checklist-analytics-summary { font-size: 13px; color: var(--text2); margin-bottom: 12px; }

@@ -13,6 +13,7 @@ import effortRouter from './routes/effort.js';
 import projectsRouter from './routes/projects.js';
 import templatesRouter from './routes/templates.js';
 import adminRouter from './routes/admin.js';
+import { runtimeBackupDir, runtimeDbPath } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +50,8 @@ export function startServer(port = process.env.PORT || 3001) {
   return new Promise((resolve) => {
     const server = app.listen(port, () => {
       console.log(`Server running on http://localhost:${port}`);
+      console.log(`Scorecard database: ${runtimeDbPath}`);
+      console.log(`Scorecard backups: ${runtimeBackupDir}`);
       resolve(server);
     });
   });

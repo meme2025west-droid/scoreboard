@@ -84,9 +84,12 @@ function filterToStarred(nodes) {
   const filtered = [];
   for (const node of nodes) {
     const filteredChildren = filterToStarred(node.children || []);
-    if (node.starred || filteredChildren.length > 0) {
+    if (node.starred) {
       filtered.push({ ...node, children: filteredChildren });
+      continue;
     }
+
+    filtered.push(...filteredChildren);
   }
   return filtered;
 }

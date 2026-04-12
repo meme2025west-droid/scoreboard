@@ -68,6 +68,9 @@ async function createProjectsFromTemplate(userId, templateId) {
   if (template.type !== 'TIMELOG') {
     throw Object.assign(new Error('Template is not a timelog project set'), { status: 400 });
   }
+  if (template.templateProjects.length === 0) {
+    throw Object.assign(new Error('Template has no projects yet'), { status: 400 });
+  }
 
   const projectIdsByTemplateProjectId = {};
   for (const templateProject of template.templateProjects) {

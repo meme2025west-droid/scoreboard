@@ -122,6 +122,7 @@ router.get('/list/:listId/detailed-analytics', async (req, res) => {
         parentId: item.parentId,
         title: item.title,
         unit: item.unit,
+        collapsed: item.collapsed,
         valuesByDate,
       };
     });

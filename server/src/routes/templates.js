@@ -55,37 +55,64 @@ async function syncLinkedListsFromTemplate(templateId) {
   const [templateItems, linkedLists] = await Promise.all([
     prisma.templateItem.findMany({
       where: { templateId },
-      orderBy: [
-        { position: 'asc' },
-        { id: 'asc' },
-      ],
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
     }),
-    prisma.list.findMany({ where: { templateId } }),
+    prisma.list.findMany({
+      where: { templateId },
+      include: { items: true },
+    }),
   ]);
 
   for (const list of linkedLists) {
-    await prisma.listItem.deleteMany({ where: { listId: list.id } });
-    const listItemIdsByTemplateItemId = {};
-
-    for (const templateItem of templateItems) {
-      const listItem = await prisma.listItem.create({
-        data: {
-          listId: list.id,
-          title: templateItem.title,
-          position: templateItem.position,
-          unit: templateItem.unit,
-          collapsed: templateItem.collapsed,
-          parentId: null,
-        },
-      });
-      listItemIdsByTemplateItemId[templateItem.id] = listItem.id;
+    const existingByTemplateItemId = {};
+    const existingByTitle = {};
+    for (const li of list.items) {
+      if (li.templateItemId) {
+        existingByTemplateItemId[li.templateItemId] = li.id;
+      } else {
+        existingByTitle[li.title] = li.id;
+      }
     }
 
-    for (const templateItem of templateItems) {
-      if (templateItem.parentId && listItemIdsByTemplateItemId[templateItem.parentId]) {
+    const claimedIds = new Set();
+    const idMap = {};
+
+    for (const ti of templateItems) {
+      let existingId = existingByTemplateItemId[ti.id];
+      if (!existingId) {
+        const byTitle = existingByTitle[ti.title];
+        if (byTitle && !claimedIds.has(byTitle)) existingId = byTitle;
+      }
+
+      if (existingId && !claimedIds.has(existingId)) {
+        claimedIds.add(existingId);
         await prisma.listItem.update({
-          where: { id: listItemIdsByTemplateItemId[templateItem.id] },
-          data: { parentId: listItemIdsByTemplateItemId[templateItem.parentId] },
+          where: { id: existingId },
+          data: { templateItemId: ti.id, title: ti.title, position: ti.position, unit: ti.unit, collapsed: ti.collapsed, notes: ti.notes, parentId: null },
+        });
+        idMap[ti.id] = existingId;
+      } else {
+        const listItem = await prisma.listItem.create({
+          data: { listId: list.id, templateItemId: ti.id, title: ti.title, position: ti.position, unit: ti.unit, collapsed: ti.collapsed, notes: ti.notes, parentId: null },
+        });
+        idMap[ti.id] = listItem.id;
+      }
+    }
+
+    // Delete orphaned items with no submissions
+    const matchedIds = new Set(Object.values(idMap));
+    for (const li of list.items) {
+      if (!matchedIds.has(li.id)) {
+        const subCount = await prisma.submissionItem.count({ where: { itemId: li.id } });
+        if (subCount === 0) await prisma.listItem.delete({ where: { id: li.id } });
+      }
+    }
+
+    for (const ti of templateItems) {
+      if (ti.parentId && idMap[ti.parentId]) {
+        await prisma.listItem.update({
+          where: { id: idMap[ti.id] },
+          data: { parentId: idMap[ti.parentId] },
         });
       }
     }

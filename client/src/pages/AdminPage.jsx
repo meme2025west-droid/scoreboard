@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { verifyAdmin, getOverview, getAllUsers, getUserLists, getUserTimelog } from '../api/admin.js';
 import {
@@ -80,8 +80,8 @@ function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
       }}
       onDrop={(e) => {
         e.preventDefault();
-        const draggedId = e.dataTransfer.getData('text/plain');
-        if (draggedId) onDrop(draggedId);
+        const draggedIds = readDraggedIds(e);
+        if (draggedIds.length > 0) onDrop(draggedIds);
       }}
     />
   );
@@ -103,11 +103,13 @@ function TemplateItemRow({
   siblingsCount = 1,
   dragState: sharedDragState,
   setDragState: setSharedDragState,
+  selectedItemIds,
+  onSelectRow,
 }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [editUnit, setEditUnit] = useState(item.unit || '');
-  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, draggedIds: [], dropTargetKey: null });
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
   const hasChildren = item.children && item.children.length > 0;
@@ -116,6 +118,7 @@ function TemplateItemRow({
   const beforeZoneKey = `zone:${parentId ?? 'root'}:${index}`;
   const nodeDropKey = `node:${item.id}`;
   const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
+  const isSelected = selectedItemIds?.has?.(item.id) || false;
 
   useEffect(() => {
     setEditTitle(item.title);
@@ -153,23 +156,26 @@ function TemplateItemRow({
               setDragState((prev) => ({ ...prev, dropTargetKey: beforeZoneKey }));
             }
           }}
-          onDrop={(draggedId) => {
-            onMove(draggedId, parentId, index);
-            setDragState({ draggedId: null, dropTargetKey: null });
+          onDrop={(draggedIds) => {
+            onMove(draggedIds, parentId, index);
+            setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
           }}
         />
       )}
 
       <div
-        className={`list-item-row ${dragState.draggedId && dragState.draggedId !== item.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
+        className={`list-item-row ${isSelected ? 'selected' : ''} ${dragState.draggedIds?.length && !dragState.draggedIds.includes(item.id) && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
         draggable={editMode}
         onDragStart={(e) => {
           if (!editMode) return;
-          e.dataTransfer.setData('text/plain', item.id);
+          const canDragSelection = selectedItemIds?.has?.(item.id) && selectedItemIds.size > 1;
+          const draggedIds = canDragSelection ? Array.from(selectedItemIds) : [item.id];
+          e.dataTransfer.setData('application/x-template-item-ids', JSON.stringify(draggedIds));
+          e.dataTransfer.setData('text/plain', draggedIds[0]);
           e.dataTransfer.effectAllowed = 'move';
-          setDragState({ draggedId: item.id, dropTargetKey: null });
+          setDragState({ draggedId: item.id, draggedIds, dropTargetKey: null });
         }}
-        onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
+        onDragEnd={() => setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null })}
         onDragOver={(e) => {
           if (editMode) {
             e.preventDefault();
@@ -181,15 +187,19 @@ function TemplateItemRow({
         onDrop={(e) => {
           if (!editMode) return;
           e.preventDefault();
-          const draggedId = e.dataTransfer.getData('text/plain');
-          if (draggedId && draggedId !== item.id) {
-            onMove(draggedId, item.id, item.children?.length || 0);
+          const draggedIds = readDraggedIds(e);
+          if (draggedIds.length > 0 && !draggedIds.includes(item.id)) {
+            onMove(draggedIds, item.id, item.children?.length || 0);
           }
-          setDragState({ draggedId: null, dropTargetKey: null });
+          setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
         }}
+        onClick={(e) => onSelectRow?.(item.id, e)}
       >
         {hasChildren ? (
-          <button className="collapse-btn" onClick={() => onToggleCollapse(item)}>
+          <button className="collapse-btn" onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse(item);
+          }}>
             {isCollapsed ? '▶' : '▼'}
           </button>
         ) : (
@@ -219,7 +229,10 @@ function TemplateItemRow({
               )}
             </div>
           ) : (
-            <span onDoubleClick={() => setEditing(true)}>
+            <span onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}>
               {item.title}
               {isChecklist && item.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{item.unit}]</span>}
             </span>
@@ -228,13 +241,22 @@ function TemplateItemRow({
 
         {editMode && (
           <>
-            <button className="btn-icon" style={{ fontSize: 13 }} onClick={() => onOutdent(item.id)} title="Outdent one level">
+            <button className="btn-icon" style={{ fontSize: 13 }} onClick={(e) => {
+              e.stopPropagation();
+              onOutdent(item.id);
+            }} title="Outdent one level">
               ⇤
             </button>
-            <button className="btn-icon" style={{ fontSize: 14 }} onClick={() => onAddChild(item.id)} title="Add sub-item">
+            <button className="btn-icon" style={{ fontSize: 14 }} onClick={(e) => {
+              e.stopPropagation();
+              onAddChild(item.id);
+            }} title="Add sub-item">
               ⊕
             </button>
-            <button className="btn-icon" style={{ color: 'var(--red)', fontSize: 14 }} onClick={() => onDelete(item.id)} title="Delete item">
+            <button className="btn-icon" style={{ color: 'var(--red)', fontSize: 14 }} onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item.id);
+            }} title="Delete item">
               ✕
             </button>
           </>
@@ -261,6 +283,8 @@ function TemplateItemRow({
               siblingsCount={item.children.length}
               dragState={dragState}
               setDragState={setDragState}
+              selectedItemIds={selectedItemIds}
+              onSelectRow={onSelectRow}
             />
           ))}
         </div>
@@ -275,9 +299,9 @@ function TemplateItemRow({
               setDragState((prev) => ({ ...prev, dropTargetKey: afterZoneKey }));
             }
           }}
-          onDrop={(draggedId) => {
-            onMove(draggedId, parentId, siblingsCount);
-            setDragState({ draggedId: null, dropTargetKey: null });
+          onDrop={(draggedIds) => {
+            onMove(draggedIds, parentId, siblingsCount);
+            setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
           }}
         />
       )}
@@ -712,15 +736,34 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
   const [addingChild, setAddingChild] = useState(null);
   const [newChildTitle, setNewChildTitle] = useState('');
   const [newChildUnit, setNewChildUnit] = useState('');
+  const [selectedItemIds, setSelectedItemIds] = useState(() => new Set());
+  const [selectionAnchorId, setSelectionAnchorId] = useState(null);
+
+  const tree = useMemo(() => buildTemplateTree(items), [items]);
+  const visibleItemIds = useMemo(() => flattenVisibleIds(tree), [tree]);
 
   useEffect(() => {
     setEditMode(false);
     setAddingChild(null);
     setNewChildTitle('');
     setNewChildUnit('');
+    setSelectedItemIds(new Set());
+    setSelectionAnchorId(null);
   }, [templateId]);
 
   useEffect(() => { loadItems(); }, [templateId, refreshKey]);
+
+  useEffect(() => {
+    const existingIds = new Set(items.map((item) => item.id));
+    setSelectedItemIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (existingIds.has(id)) next.add(id);
+      });
+      return next;
+    });
+    setSelectionAnchorId((prev) => (prev && existingIds.has(prev) ? prev : null));
+  }, [items]);
 
   async function loadItems() {
     try {
@@ -751,7 +794,45 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
 
   async function handleMoveItem(itemId, newParentId, newIndex) {
     try {
-      await moveTemplateItem(adminToken, itemId, { newParentId, newIndex });
+      const ids = Array.isArray(itemId) ? itemId : [itemId];
+      const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+      if (uniqueIds.length === 0) return;
+
+      const parentById = new Map(items.map((entry) => [entry.id, entry.parentId || null]));
+      const selectedSet = new Set(uniqueIds);
+      const topLevelIds = uniqueIds.filter((id) => {
+        let parent = parentById.get(id) || null;
+        while (parent) {
+          if (selectedSet.has(parent)) return false;
+          parent = parentById.get(parent) || null;
+        }
+        return true;
+      });
+
+      const isAncestor = (ancestorId, maybeDescendantId) => {
+        let current = maybeDescendantId || null;
+        while (current) {
+          if (current === ancestorId) return true;
+          current = parentById.get(current) || null;
+        }
+        return false;
+      };
+
+      const movableIds = topLevelIds.filter((id) => id !== newParentId && !isAncestor(id, newParentId));
+      if (movableIds.length === 0) return;
+
+      const orderedIds = [
+        ...visibleItemIds.filter((id) => movableIds.includes(id)),
+        ...movableIds.filter((id) => !visibleItemIds.includes(id)),
+      ];
+
+      let insertionIndex = Math.max(0, Number.isInteger(newIndex) ? newIndex : 0);
+      for (const id of orderedIds) {
+        await moveTemplateItem(adminToken, id, { newParentId, newIndex: insertionIndex });
+        insertionIndex += 1;
+      }
+
+      setSelectedItemIds(new Set(orderedIds));
       await loadItems();
     } catch (error) {
       toast(error?.response?.data?.error || 'Failed to move item', 'error');
@@ -763,9 +844,47 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
 
     try {
       await deleteTemplateItem(adminToken, itemId);
+      setSelectedItemIds((prev) => {
+        if (!prev.has(itemId)) return prev;
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+      setSelectionAnchorId((prev) => (prev === itemId ? null : prev));
       await loadItems();
     } catch {
       toast('Failed to delete item', 'error');
+    }
+  }
+
+  async function handleDeleteSelectedItems() {
+    const ids = Array.from(selectedItemIds);
+    if (ids.length === 0) return;
+
+    const parentById = new Map(items.map((entry) => [entry.id, entry.parentId || null]));
+    const selectedSet = new Set(ids);
+    const topLevelIds = ids.filter((id) => {
+      let parent = parentById.get(id) || null;
+      while (parent) {
+        if (selectedSet.has(parent)) return false;
+        parent = parentById.get(parent) || null;
+      }
+      return true;
+    });
+
+    const label = topLevelIds.length === 1 ? 'this selected item' : `${topLevelIds.length} selected items`;
+    if (!confirm(`Delete ${label} and any sub-items?`)) return;
+
+    try {
+      for (const id of topLevelIds) {
+        await deleteTemplateItem(adminToken, id);
+      }
+      setSelectedItemIds(new Set());
+      setSelectionAnchorId(null);
+      await loadItems();
+      toast(topLevelIds.length === 1 ? 'Item deleted' : `${topLevelIds.length} items deleted`);
+    } catch {
+      toast('Failed to delete selected items', 'error');
     }
   }
 
@@ -798,6 +917,8 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
       setAddingChild(null);
       setNewChildTitle('');
       setNewChildUnit('');
+      setSelectedItemIds(new Set());
+      setSelectionAnchorId(null);
       await loadItems();
       toast(lines.length > 1 ? `Added ${lines.length} items` : 'Item added');
     } catch {
@@ -835,14 +956,70 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
     await handleMoveItem(itemId, newParentId, newIndex);
   }
 
-  const tree = buildTemplateTree(items);
+  function handleRowSelect(itemId, event) {
+    if (!editMode) return;
+
+    const target = event?.target;
+    const isInteractiveElement = target?.closest?.('button,input,textarea,select,a,label,[contenteditable="true"]');
+    if (isInteractiveElement) return;
+
+    if ((event?.ctrlKey || event?.metaKey) && !event?.shiftKey) {
+      setSelectedItemIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(itemId)) {
+          next.delete(itemId);
+        } else {
+          next.add(itemId);
+        }
+        return next;
+      });
+      setSelectionAnchorId(itemId);
+      return;
+    }
+
+    if (event?.shiftKey && selectionAnchorId) {
+      const anchorIdx = visibleItemIds.indexOf(selectionAnchorId);
+      const currentIdx = visibleItemIds.indexOf(itemId);
+      if (anchorIdx !== -1 && currentIdx !== -1) {
+        const start = Math.min(anchorIdx, currentIdx);
+        const end = Math.max(anchorIdx, currentIdx);
+        const range = visibleItemIds.slice(start, end + 1);
+        setSelectedItemIds((prev) => {
+          const next = new Set(prev);
+          range.forEach((id) => next.add(id));
+          return next;
+        });
+        return;
+      }
+    }
+
+    setSelectedItemIds(new Set([itemId]));
+    setSelectionAnchorId(itemId);
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+        {editMode && selectedItemIds.size > 0 && (
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={handleDeleteSelectedItems}
+            title={selectedItemIds.size === 1 ? 'Delete selected item' : `Delete ${selectedItemIds.size} selected items`}
+          >
+            Delete selected ({selectedItemIds.size})
+          </button>
+        )}
         <button
           className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
-          onClick={() => setEditMode((current) => !current)}
+          onClick={() => {
+            setEditMode((current) => {
+              if (current) {
+                setSelectedItemIds(new Set());
+                setSelectionAnchorId(null);
+              }
+              return !current;
+            });
+          }}
         >
           {editMode ? '✓ Done' : '✎ Edit'}
         </button>
@@ -866,6 +1043,8 @@ function TemplateItemsList({ adminToken, templateId, templateType, refreshKey })
             setNewChildTitle('');
             setNewChildUnit('');
           }}
+          selectedItemIds={selectedItemIds}
+          onSelectRow={handleRowSelect}
           parentId={null}
           index={index}
           siblingsCount={tree.length}
@@ -925,16 +1104,19 @@ function TemplateProjectRow({
   siblingsCount = 1,
   dragState: sharedDragState,
   setDragState: setSharedDragState,
+  selectedProjectIds,
+  onSelectRow,
 }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(project.title);
   const [editColor, setEditColor] = useState(project.color || PROJECT_TEMPLATE_COLORS[0]);
-  const [localDragState, setLocalDragState] = useState({ draggedId: null, dropTargetKey: null });
+  const [localDragState, setLocalDragState] = useState({ draggedId: null, draggedIds: [], dropTargetKey: null });
   const dragState = sharedDragState || localDragState;
   const setDragState = setSharedDragState || setLocalDragState;
   const beforeZoneKey = `zone:${parentId ?? 'root'}:${index}`;
   const nodeDropKey = `node:${project.id}`;
   const afterZoneKey = `zone:${parentId ?? 'root'}:${siblingsCount}`;
+  const isSelected = selectedProjectIds?.has?.(project.id) || false;
 
   useEffect(() => {
     setEditTitle(project.title);
@@ -968,23 +1150,26 @@ function TemplateProjectRow({
               setDragState((prev) => ({ ...prev, dropTargetKey: beforeZoneKey }));
             }
           }}
-          onDrop={(draggedId) => {
-            onMove(draggedId, parentId, index);
-            setDragState({ draggedId: null, dropTargetKey: null });
+          onDrop={(draggedIds) => {
+            onMove(draggedIds, parentId, index);
+            setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
           }}
         />
       )}
 
       <div
-        className={`list-item-row ${dragState.draggedId && dragState.draggedId !== project.id && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
+        className={`list-item-row ${isSelected ? 'selected' : ''} ${dragState.draggedIds?.length && !dragState.draggedIds.includes(project.id) && dragState.dropTargetKey === nodeDropKey ? 'drop-target' : ''}`}
         draggable={editMode}
         onDragStart={(e) => {
           if (!editMode) return;
-          e.dataTransfer.setData('text/plain', project.id);
+          const canDragSelection = selectedProjectIds?.has?.(project.id) && selectedProjectIds.size > 1;
+          const draggedIds = canDragSelection ? Array.from(selectedProjectIds) : [project.id];
+          e.dataTransfer.setData('application/x-template-item-ids', JSON.stringify(draggedIds));
+          e.dataTransfer.setData('text/plain', draggedIds[0]);
           e.dataTransfer.effectAllowed = 'move';
-          setDragState({ draggedId: project.id, dropTargetKey: null });
+          setDragState({ draggedId: project.id, draggedIds, dropTargetKey: null });
         }}
-        onDragEnd={() => setDragState({ draggedId: null, dropTargetKey: null })}
+        onDragEnd={() => setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null })}
         onDragOver={(e) => {
           if (editMode) {
             e.preventDefault();
@@ -996,12 +1181,13 @@ function TemplateProjectRow({
         onDrop={(e) => {
           if (!editMode) return;
           e.preventDefault();
-          const draggedId = e.dataTransfer.getData('text/plain');
-          if (draggedId && draggedId !== project.id) {
-            onMove(draggedId, project.id, project.children?.length || 0);
+          const draggedIds = readDraggedIds(e);
+          if (draggedIds.length > 0 && !draggedIds.includes(project.id)) {
+            onMove(draggedIds, project.id, project.children?.length || 0);
           }
-          setDragState({ draggedId: null, dropTargetKey: null });
+          setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
         }}
+        onClick={(e) => onSelectRow?.(project.id, e)}
       >
         <span style={{ width: 18 }} />
         <span style={{ width: 12, height: 12, borderRadius: '50%', background: project.color || 'var(--accent)', flexShrink: 0 }} />
@@ -1038,7 +1224,10 @@ function TemplateProjectRow({
               </div>
             </div>
           ) : (
-            <span onDoubleClick={() => setEditing(true)}>
+            <span onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}>
               {project.title}
             </span>
           )}
@@ -1046,13 +1235,22 @@ function TemplateProjectRow({
 
         {editMode && (
           <>
-            <button className="btn-icon" style={{ fontSize: 13 }} onClick={() => onOutdent(project.id)} title="Outdent one level">
+            <button className="btn-icon" style={{ fontSize: 13 }} onClick={(e) => {
+              e.stopPropagation();
+              onOutdent(project.id);
+            }} title="Outdent one level">
               ⇤
             </button>
-            <button className="btn-icon" style={{ fontSize: 14 }} onClick={() => onAddChild(project.id)} title="Add sub-project">
+            <button className="btn-icon" style={{ fontSize: 14 }} onClick={(e) => {
+              e.stopPropagation();
+              onAddChild(project.id);
+            }} title="Add sub-project">
               ⊕
             </button>
-            <button className="btn-icon" style={{ color: 'var(--red)', fontSize: 14 }} onClick={() => onDelete(project.id)} title="Delete project">
+            <button className="btn-icon" style={{ color: 'var(--red)', fontSize: 14 }} onClick={(e) => {
+              e.stopPropagation();
+              onDelete(project.id);
+            }} title="Delete project">
               ✕
             </button>
           </>
@@ -1077,6 +1275,8 @@ function TemplateProjectRow({
               siblingsCount={project.children.length}
               dragState={dragState}
               setDragState={setDragState}
+              selectedProjectIds={selectedProjectIds}
+              onSelectRow={onSelectRow}
             />
           ))}
         </div>
@@ -1091,9 +1291,9 @@ function TemplateProjectRow({
               setDragState((prev) => ({ ...prev, dropTargetKey: afterZoneKey }));
             }
           }}
-          onDrop={(draggedId) => {
-            onMove(draggedId, parentId, siblingsCount);
-            setDragState({ draggedId: null, dropTargetKey: null });
+          onDrop={(draggedIds) => {
+            onMove(draggedIds, parentId, siblingsCount);
+            setDragState({ draggedId: null, draggedIds: [], dropTargetKey: null });
           }}
         />
       )}
@@ -1110,6 +1310,11 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
   const [newProjectColor, setNewProjectColor] = useState(PROJECT_TEMPLATE_COLORS[0]);
   const [newRootTitle, setNewRootTitle] = useState('');
   const [newRootColor, setNewRootColor] = useState(PROJECT_TEMPLATE_COLORS[0]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState(() => new Set());
+  const [selectionAnchorId, setSelectionAnchorId] = useState(null);
+
+  const tree = useMemo(() => buildTemplateTree(projects), [projects]);
+  const visibleProjectIds = useMemo(() => flattenVisibleIds(tree), [tree]);
 
   useEffect(() => {
     setEditMode(false);
@@ -1118,9 +1323,23 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
     setNewRootTitle('');
     setNewProjectColor(PROJECT_TEMPLATE_COLORS[0]);
     setNewRootColor(PROJECT_TEMPLATE_COLORS[0]);
+    setSelectedProjectIds(new Set());
+    setSelectionAnchorId(null);
   }, [templateId]);
 
   useEffect(() => { loadProjects(); }, [templateId, refreshKey]);
+
+  useEffect(() => {
+    const existingIds = new Set(projects.map((project) => project.id));
+    setSelectedProjectIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (existingIds.has(id)) next.add(id);
+      });
+      return next;
+    });
+    setSelectionAnchorId((prev) => (prev && existingIds.has(prev) ? prev : null));
+  }, [projects]);
 
   async function loadProjects() {
     try {
@@ -1142,7 +1361,45 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
 
   async function handleMoveProject(projectId, newParentId, newIndex) {
     try {
-      await moveTemplateProject(adminToken, projectId, { newParentId, newIndex });
+      const ids = Array.isArray(projectId) ? projectId : [projectId];
+      const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+      if (uniqueIds.length === 0) return;
+
+      const parentById = new Map(projects.map((entry) => [entry.id, entry.parentId || null]));
+      const selectedSet = new Set(uniqueIds);
+      const topLevelIds = uniqueIds.filter((id) => {
+        let parent = parentById.get(id) || null;
+        while (parent) {
+          if (selectedSet.has(parent)) return false;
+          parent = parentById.get(parent) || null;
+        }
+        return true;
+      });
+
+      const isAncestor = (ancestorId, maybeDescendantId) => {
+        let current = maybeDescendantId || null;
+        while (current) {
+          if (current === ancestorId) return true;
+          current = parentById.get(current) || null;
+        }
+        return false;
+      };
+
+      const movableIds = topLevelIds.filter((id) => id !== newParentId && !isAncestor(id, newParentId));
+      if (movableIds.length === 0) return;
+
+      const orderedIds = [
+        ...visibleProjectIds.filter((id) => movableIds.includes(id)),
+        ...movableIds.filter((id) => !visibleProjectIds.includes(id)),
+      ];
+
+      let insertionIndex = Math.max(0, Number.isInteger(newIndex) ? newIndex : 0);
+      for (const id of orderedIds) {
+        await moveTemplateProject(adminToken, id, { newParentId, newIndex: insertionIndex });
+        insertionIndex += 1;
+      }
+
+      setSelectedProjectIds(new Set(orderedIds));
       await loadProjects();
     } catch (error) {
       toast(error?.response?.data?.error || 'Failed to move project', 'error');
@@ -1154,9 +1411,47 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
 
     try {
       await deleteTemplateProject(adminToken, projectId);
+      setSelectedProjectIds((prev) => {
+        if (!prev.has(projectId)) return prev;
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+      setSelectionAnchorId((prev) => (prev === projectId ? null : prev));
       await loadProjects();
     } catch {
       toast('Failed to delete project', 'error');
+    }
+  }
+
+  async function handleDeleteSelectedProjects() {
+    const ids = Array.from(selectedProjectIds);
+    if (ids.length === 0) return;
+
+    const parentById = new Map(projects.map((entry) => [entry.id, entry.parentId || null]));
+    const selectedSet = new Set(ids);
+    const topLevelIds = ids.filter((id) => {
+      let parent = parentById.get(id) || null;
+      while (parent) {
+        if (selectedSet.has(parent)) return false;
+        parent = parentById.get(parent) || null;
+      }
+      return true;
+    });
+
+    const label = topLevelIds.length === 1 ? 'this selected project' : `${topLevelIds.length} selected projects`;
+    if (!confirm(`Delete ${label} and any sub-projects?`)) return;
+
+    try {
+      for (const id of topLevelIds) {
+        await deleteTemplateProject(adminToken, id);
+      }
+      setSelectedProjectIds(new Set());
+      setSelectionAnchorId(null);
+      await loadProjects();
+      toast(topLevelIds.length === 1 ? 'Project deleted' : `${topLevelIds.length} projects deleted`);
+    } catch {
+      toast('Failed to delete selected projects', 'error');
     }
   }
 
@@ -1186,6 +1481,8 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
     }
 
     await loadProjects();
+    setSelectedProjectIds(new Set());
+    setSelectionAnchorId(null);
     toast(lines.length > 1 ? `Added ${lines.length} projects` : 'Project added');
     return true;
   }
@@ -1226,7 +1523,6 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
   }
 
   async function handleOutdentProject(projectId) {
-    const tree = buildTemplateTree(projects);
     const ctx = findNodeWithContext(tree, projectId);
     if (!ctx || !ctx.parent) return;
 
@@ -1236,14 +1532,70 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
     await handleMoveProject(projectId, newParentId, newIndex);
   }
 
-  const tree = buildTemplateTree(projects);
+  function handleRowSelect(projectId, event) {
+    if (!editMode) return;
+
+    const target = event?.target;
+    const isInteractiveElement = target?.closest?.('button,input,textarea,select,a,label,[contenteditable="true"]');
+    if (isInteractiveElement) return;
+
+    if ((event?.ctrlKey || event?.metaKey) && !event?.shiftKey) {
+      setSelectedProjectIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(projectId)) {
+          next.delete(projectId);
+        } else {
+          next.add(projectId);
+        }
+        return next;
+      });
+      setSelectionAnchorId(projectId);
+      return;
+    }
+
+    if (event?.shiftKey && selectionAnchorId) {
+      const anchorIdx = visibleProjectIds.indexOf(selectionAnchorId);
+      const currentIdx = visibleProjectIds.indexOf(projectId);
+      if (anchorIdx !== -1 && currentIdx !== -1) {
+        const start = Math.min(anchorIdx, currentIdx);
+        const end = Math.max(anchorIdx, currentIdx);
+        const range = visibleProjectIds.slice(start, end + 1);
+        setSelectedProjectIds((prev) => {
+          const next = new Set(prev);
+          range.forEach((id) => next.add(id));
+          return next;
+        });
+        return;
+      }
+    }
+
+    setSelectedProjectIds(new Set([projectId]));
+    setSelectionAnchorId(projectId);
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+        {editMode && selectedProjectIds.size > 0 && (
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={handleDeleteSelectedProjects}
+            title={selectedProjectIds.size === 1 ? 'Delete selected project' : `Delete ${selectedProjectIds.size} selected projects`}
+          >
+            Delete selected ({selectedProjectIds.size})
+          </button>
+        )}
         <button
           className={`btn btn-secondary btn-sm ${editMode ? 'active-edit-btn' : ''}`}
-          onClick={() => setEditMode((current) => !current)}
+          onClick={() => {
+            setEditMode((current) => {
+              if (current) {
+                setSelectedProjectIds(new Set());
+                setSelectionAnchorId(null);
+              }
+              return !current;
+            });
+          }}
         >
           {editMode ? '✓ Done' : '✎ Edit'}
         </button>
@@ -1265,6 +1617,8 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
             setNewProjectTitle('');
             setNewProjectColor(PROJECT_TEMPLATE_COLORS[0]);
           }}
+          selectedProjectIds={selectedProjectIds}
+          onSelectRow={handleRowSelect}
           parentId={null}
           index={index}
           siblingsCount={tree.length}
@@ -1345,4 +1699,32 @@ function TemplateProjectsList({ adminToken, templateId, refreshKey }) {
       )}
     </div>
   );
+}
+
+function flattenVisibleIds(nodes) {
+  const out = [];
+  for (const node of nodes || []) {
+    out.push(node.id);
+    if (!node.collapsed && node.children?.length) {
+      out.push(...flattenVisibleIds(node.children));
+    }
+  }
+  return out;
+}
+
+function readDraggedIds(event) {
+  const raw = event.dataTransfer.getData('application/x-template-item-ids');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((id) => typeof id === 'string' && id);
+      }
+    } catch {
+      // Ignore malformed payload and fall back to plain text.
+    }
+  }
+
+  const draggedId = event.dataTransfer.getData('text/plain');
+  return draggedId ? [draggedId] : [];
 }

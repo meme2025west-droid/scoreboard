@@ -80,14 +80,15 @@ model List {
 }
 
 model ListItem {
-  id        String  @id @default(cuid())
-  listId    String
-  parentId  String?
-  title     String
-  position  Int
-  unit      String?
-  collapsed Boolean @default(false)
-  notes     String?
+  id             String  @id @default(cuid())
+  listId         String
+  parentId       String?
+  templateItemId String?
+  title          String
+  position       Int
+  unit           String?
+  collapsed      Boolean @default(false)
+  notes          String?
 
   list            List             @relation(fields: [listId], references: [id], onDelete: Cascade)
   parent          ListItem?        @relation("LIChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)

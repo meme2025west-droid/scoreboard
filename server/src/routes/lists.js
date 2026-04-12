@@ -75,6 +75,18 @@ router.get('/:id', async (req, res) => {
       },
     });
     if (!list) return res.status(404).json({ error: 'List not found' });
+
+    // Auto-sync from template if template-linked and items are stale
+    if (list.templateId) {
+      await syncListItemsFromTemplate(list.id, list.templateId);
+      // Re-fetch items after sync
+      const updated = await prisma.listItem.findMany({
+        where: { listId: list.id },
+        orderBy: { position: 'asc' },
+      });
+      list.items = updated;
+    }
+
     const tree = buildTree(list.items);
     res.json({ ...list, itemsTree: tree });
   } catch (e) {
@@ -124,16 +136,17 @@ router.post('/user/:token', async (req, res) => {
         where: { templateId },
         orderBy: { position: 'asc' },
       });
-      // Map old template item IDs to new ListItem IDs
+      // Map template item IDs to list item IDs (first pass: create without parentId)
       const idMap = {};
-      // first pass: create items without parentId
       for (const ti of tItems) {
         const li = await prisma.listItem.create({
           data: {
             listId: list.id,
+            templateItemId: ti.id,
             title: ti.title,
             position: ti.position,
             unit: ti.unit || null,
+            collapsed: ti.collapsed ?? false,
             notes: ti.notes || null,
             parentId: null,
           },
@@ -499,35 +512,85 @@ router.delete('/items/:itemId', async (req, res) => {
 });
 
 // Sync list from template (pull latest template changes)
+// Sync a list's items from its template using upsert-by-templateItemId.
+// Safe for lists with existing submissions: matched items keep the same list item ID
+// (so SubmissionItem references survive), new template items are added, and old
+// items that have no matching template item are left alone (not deleted).
+async function syncListItemsFromTemplate(listId, templateId) {
+  const [tItems, existingItems] = await Promise.all([
+    prisma.templateItem.findMany({ where: { templateId }, orderBy: { position: 'asc' } }),
+    prisma.listItem.findMany({ where: { listId } }),
+  ]);
+
+  // Primary map: templateItemId -> existing listItem (for items already tracked)
+  const existingByTemplateItemId = {};
+  // Fallback map: title -> existing listItem (for legacy items without templateItemId)
+  const existingByTitle = {};
+  for (const li of existingItems) {
+    if (li.templateItemId) {
+      existingByTemplateItemId[li.templateItemId] = li;
+    } else {
+      // Only use as fallback if not already claimed
+      existingByTitle[li.title] = li;
+    }
+  }
+
+  // Track which existing item ids have been claimed to avoid double-matching
+  const claimedIds = new Set();
+
+  // First pass: upsert each template item (parentId set to null first, resolved in second pass)
+  const idMap = {}; // templateItemId -> listItemId
+  for (const ti of tItems) {
+    let existing = existingByTemplateItemId[ti.id];
+    if (!existing) {
+      // Fallback: match by title for legacy items that predate templateItemId
+      const byTitle = existingByTitle[ti.title];
+      if (byTitle && !claimedIds.has(byTitle.id)) {
+        existing = byTitle;
+      }
+    }
+
+    if (existing && !claimedIds.has(existing.id)) {
+      claimedIds.add(existing.id);
+      await prisma.listItem.update({
+        where: { id: existing.id },
+        data: { templateItemId: ti.id, title: ti.title, position: ti.position, unit: ti.unit || null, collapsed: ti.collapsed ?? false, notes: ti.notes || null, parentId: null },
+      });
+      idMap[ti.id] = existing.id;
+    } else {
+      const li = await prisma.listItem.create({
+        data: { listId, templateItemId: ti.id, title: ti.title, position: ti.position, unit: ti.unit || null, collapsed: ti.collapsed ?? false, notes: ti.notes || null, parentId: null },
+      });
+      idMap[ti.id] = li.id;
+    }
+  }
+
+  // Delete orphaned items: those NOT matched to any template item AND with no submissions
+  const matchedIds = new Set(Object.values(idMap));
+  const orphans = existingItems.filter(li => !matchedIds.has(li.id));
+  for (const orphan of orphans) {
+    const subCount = await prisma.submissionItem.count({ where: { itemId: orphan.id } });
+    if (subCount === 0) {
+      await prisma.listItem.delete({ where: { id: orphan.id } });
+    }
+  }
+
+  // Second pass: restore parentId hierarchy
+  for (const ti of tItems) {
+    if (ti.parentId && idMap[ti.parentId]) {
+      await prisma.listItem.update({
+        where: { id: idMap[ti.id] },
+        data: { parentId: idMap[ti.parentId] },
+      });
+    }
+  }
+}
+
 router.post('/:id/sync-template', async (req, res) => {
   try {
     const list = await prisma.list.findUnique({ where: { id: req.params.id } });
     if (!list || !list.templateId) return res.status(400).json({ error: 'No template linked' });
-
-    const tItems = await prisma.templateItem.findMany({
-      where: { templateId: list.templateId },
-      orderBy: { position: 'asc' },
-    });
-
-    // Delete existing items, re-create from template
-    await prisma.listItem.deleteMany({ where: { listId: list.id } });
-
-    const idMap = {};
-    for (const ti of tItems) {
-      const li = await prisma.listItem.create({
-        data: { listId: list.id, title: ti.title, position: ti.position, unit: ti.unit || null, parentId: null },
-      });
-      idMap[ti.id] = li.id;
-    }
-    for (const ti of tItems) {
-      if (ti.parentId && idMap[ti.parentId]) {
-        await prisma.listItem.update({
-          where: { id: idMap[ti.id] },
-          data: { parentId: idMap[ti.parentId] },
-        });
-      }
-    }
-
+    await syncListItemsFromTemplate(list.id, list.templateId);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

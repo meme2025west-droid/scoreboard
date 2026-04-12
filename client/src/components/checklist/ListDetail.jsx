@@ -388,6 +388,20 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
       return;
     }
 
+    if ((event?.ctrlKey || event?.metaKey) && !event?.shiftKey) {
+      setSelectedItemIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(itemId)) {
+          next.delete(itemId);
+        } else {
+          next.add(itemId);
+        }
+        return next;
+      });
+      setSelectionAnchorId(itemId);
+      return;
+    }
+
     if (event?.shiftKey && selectionAnchorId) {
       const anchorIdx = visibleItemIds.indexOf(selectionAnchorId);
       const currentIdx = visibleItemIds.indexOf(itemId);

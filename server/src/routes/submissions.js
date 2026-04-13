@@ -4,15 +4,13 @@ import prisma from '../db.js';
 const router = Router();
 
 function startOfDay(dateValue) {
-  const date = new Date(dateValue);
-  date.setHours(0, 0, 0, 0);
-  return date;
+  const [y, m, d] = String(dateValue).split('-').map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
 }
 
 function endOfDay(dateValue) {
-  const date = new Date(dateValue);
-  date.setHours(23, 59, 59, 999);
-  return date;
+  const [y, m, d] = String(dateValue).split('-').map(Number);
+  return new Date(y, m - 1, d, 23, 59, 59, 999);
 }
 
 function daysInclusive(fromDate, toDate) {

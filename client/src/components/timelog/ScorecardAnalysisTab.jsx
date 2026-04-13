@@ -4,8 +4,13 @@ import { getDetailedAnalytics } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
 
+function localDateStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function formatDate(dateStr) {
-  const date = new Date(dateStr + 'T00:00:00Z');
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
 }
 
@@ -35,9 +40,9 @@ export default function ScorecardAnalysisTab({ token }) {
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 14);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
-  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(() => localDateStr(new Date()));
 
   const itemTree = useMemo(() => buildItemTree(analytics?.items || []), [analytics?.items]);
 

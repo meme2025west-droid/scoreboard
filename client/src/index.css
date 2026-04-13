@@ -152,7 +152,7 @@ label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 4px
 .collapse-btn:hover { color: var(--text); background: var(--bg); }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 200; }
-.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 500px; box-shadow: var(--shadow); }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 900px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow); }
 .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 

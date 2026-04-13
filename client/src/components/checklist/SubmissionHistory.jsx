@@ -23,14 +23,18 @@ function ScoreScalePreview({ score }) {
   );
 }
 
+function localDateStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr(new Date());
 }
 
 function fifteenDaysAgoStr() {
   const date = new Date();
   date.setDate(date.getDate() - 14);
-  return date.toISOString().slice(0, 10);
+  return localDateStr(date);
 }
 
 function buildItemTree(items) {

@@ -85,4 +85,26 @@ router.get('/overview', async (req, res) => {
   }
 });
 
+// Delete a user and all their data
+router.delete('/users/:userId', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const uid = req.params.userId;
+    await prisma.$transaction([
+      // Clear self-referential parent links first (Restrict constraints)
+      prisma.project.updateMany({ where: { userId: uid }, data: { parentId: null } }),
+      prisma.list.updateMany({ where: { userId: uid }, data: { parentId: null } }),
+    ]);
+    // Clear ListItem parent links for all lists owned by this user
+    await prisma.listItem.updateMany({
+      where: { list: { userId: uid } },
+      data: { parentId: null },
+    });
+    await prisma.user.delete({ where: { id: uid } });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

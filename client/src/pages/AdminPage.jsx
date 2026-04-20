@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { verifyAdmin, getOverview, getAllUsers, getUserLists, getUserTimelog } from '../api/admin.js';
+import { verifyAdmin, getOverview, getAllUsers, getUserLists, getUserTimelog, deleteUser } from '../api/admin.js';
 import {
   getTemplate,
   getTemplates,
@@ -410,6 +410,20 @@ export default function AdminPage() {
     }
   }
 
+  async function handleDeleteUser(user) {
+    if (!confirm(`Delete user ${user.token.slice(0, 20)}… and ALL their lists, timelog, and data? This cannot be undone.`)) return;
+    try {
+      await deleteUser(adminToken, user.id);
+      setUsers(us => us.filter(u => u.id !== user.id));
+      setSelectedUser(null);
+      setUserLists([]);
+      setUserTimelog([]);
+      toast('User deleted');
+    } catch {
+      toast('Failed to delete user', 'error');
+    }
+  }
+
   async function handleCreateTemplate() {
     if (!newTmplTitle.trim()) return;
     try {
@@ -583,6 +597,13 @@ export default function AdminPage() {
                     >
                       Open user site ↗
                     </a>
+                    <button
+                      className="btn btn-sm"
+                      style={{ marginLeft: 8, background: 'var(--red)', color: '#fff', border: 'none' }}
+                      onClick={() => handleDeleteUser(selectedUser)}
+                    >
+                      Delete user
+                    </button>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text3)' }}>
                     Joined: {fmt(selectedUser.createdAt)} · TZ: {selectedUser.timezone}

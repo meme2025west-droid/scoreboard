@@ -12,3 +12,5 @@ export const getUserLists = (token, userId) =>
   api.get(`/admin/users/${userId}/lists`, h(token)).then(r => r.data);
 export const getUserTimelog = (token, userId, params = {}) =>
   api.get(`/admin/users/${userId}/timelog`, { ...h(token), params }).then(r => r.data);
+export const deleteUser = (token, userId) =>
+  api.delete(`/admin/users/${userId}`, h(token)).then(r => r.data);

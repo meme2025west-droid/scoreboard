@@ -54,6 +54,7 @@ export default function TimelogList({ entries, tz, onDelete, onUpdate }) {
   const [editingId, setEditingId] = useState(null);
   const [editStart, setEditStart] = useState('');
   const [editEnd, setEditEnd] = useState('');
+  const [editComment, setEditComment] = useState('');
   const [savingId, setSavingId] = useState(null);
 
   const editDurationPreview = useMemo(() => formatDurationFromInputs(editStart, editEnd), [editStart, editEnd]);
@@ -66,6 +67,7 @@ export default function TimelogList({ entries, tz, onDelete, onUpdate }) {
     setEditingId(entry.id);
     setEditStart(toLocalInput(entry.startTime, tz));
     setEditEnd(toLocalInput(entry.endTime, tz));
+    setEditComment(entry.comment || '');
   }
 
   async function saveEdit(entryId) {
@@ -75,12 +77,14 @@ export default function TimelogList({ entries, tz, onDelete, onUpdate }) {
     const ok = await onUpdate(entryId, {
       startTime: new Date(editStart).toISOString(),
       endTime: editEnd ? new Date(editEnd).toISOString() : null,
+      comment: editComment || null,
     });
     setSavingId(null);
     if (ok) {
       setEditingId(null);
       setEditStart('');
       setEditEnd('');
+      setEditComment('');
     }
   }
 
@@ -88,6 +92,7 @@ export default function TimelogList({ entries, tz, onDelete, onUpdate }) {
     setEditingId(null);
     setEditStart('');
     setEditEnd('');
+    setEditComment('');
   }
 
   return (
@@ -118,6 +123,7 @@ export default function TimelogList({ entries, tz, onDelete, onUpdate }) {
                   <input type="datetime-local" value={editStart} onChange={(evt) => setEditStart(evt.target.value)} />
                   <input type="datetime-local" value={editEnd} onChange={(evt) => setEditEnd(evt.target.value)} placeholder="End (optional)" />
                 </div>
+                <input type="text" value={editComment} onChange={(evt) => setEditComment(evt.target.value)} placeholder="Comment (optional)" style={{ width: '100%' }} />
                 {editDurationPreview && (
                   <div style={{ fontSize: 12, color: editDurationPreview.startsWith('End time') ? 'var(--red)' : 'var(--text3)' }}>
                     Duration preview: {editDurationPreview}{editStart && !editEnd && !editDurationPreview.startsWith('End time') ? ' (so far)' : ''}
@@ -136,7 +142,7 @@ export default function TimelogList({ entries, tz, onDelete, onUpdate }) {
             {editingId !== e.id && (
               <button className="btn-icon" onClick={() => startEditing(e)} title="Edit times">✎</button>
             )}
-            <button className="btn-icon" style={{ color: 'var(--red)' }} onClick={() => onDelete(e.id)} title="Delete">✕</button>
+            <button className="btn-icon" style={{ color: 'var(--red)' }} onClick={() => { if (window.confirm('Delete this log entry?')) onDelete(e.id); }} title="Delete">✕</button>
           </div>
         </div>
       ))}

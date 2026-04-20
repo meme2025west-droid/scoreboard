@@ -494,6 +494,15 @@ export default function TimelogTab({ token, user }) {
               >
                 {showStarredOnly ? 'Showing starred' : 'Show starred only'}
               </button>
+              {flattenTree(projects).some(x => x.parentId) && (
+                <>
+                  <button className="btn btn-secondary btn-sm" style={{ height: 38 }} onClick={() => setCollapsedNodeIds(new Set())}>Expand all</button>
+                  <button className="btn btn-secondary btn-sm" style={{ height: 38 }} onClick={() => {
+                    const parentIds = new Set(flattenTree(projects).map(p => p.parentId).filter(Boolean));
+                    setCollapsedNodeIds(parentIds);
+                  }}>Collapse all</button>
+                </>
+              )}
             </div>
             {projects.length === 0 && (
               <div className="empty" style={{ padding: '12px 0' }}><p>No projects yet.</p></div>
@@ -527,15 +536,6 @@ export default function TimelogTab({ token, user }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => setShowNewProject(true)}>+ Add</button>
             <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={openTemplatePicker}>Templates</button>
-            {projects.some(p => projects.some(x => x.parentId === p.id)) && (
-              <>
-                <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={() => setCollapsedNodeIds(new Set())}>Expand All</button>
-                <button className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }} onClick={() => {
-                  const parentIds = new Set(projects.map(p => p.parentId).filter(Boolean));
-                  setCollapsedNodeIds(parentIds);
-                }}>Collapse All</button>
-              </>
-            )}
           </div>
         </div>
       </div>

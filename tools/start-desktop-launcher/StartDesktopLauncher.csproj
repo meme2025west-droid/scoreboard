@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationIcon>icon.ico</ApplicationIcon>
+    <AssemblyName>startScorecard</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="icon.ico" />

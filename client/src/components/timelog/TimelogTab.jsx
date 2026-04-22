@@ -80,6 +80,14 @@ function getStarredOnlyStorageKey(token) {
   return `scorecard.timelog.starredOnly.${token}`;
 }
 
+function getCollapsedNodesStorageKey(token) {
+  return `scorecard.timelog.collapsedNodes.${token}`;
+}
+
+function getDateRangeStorageKey(token) {
+  return `scorecard.timelog.dateRange.${token}`;
+}
+
 function filterToStarred(nodes) {
   const filtered = [];
   for (const node of nodes) {
@@ -119,10 +127,34 @@ export default function TimelogTab({ token, user }) {
   const [newProjTitle, setNewProjTitle] = useState('');
   const [newProjParent, setNewProjParent] = useState(null);
   const [newProjColor, setNewProjColor] = useState(COLORS[0]);
-  const [rangeFromInput, setRangeFromInput] = useState(weekAgoStr());
-  const [rangeToInput, setRangeToInput] = useState(todayStr());
-  const [rangeFrom, setRangeFrom] = useState(weekAgoStr());
-  const [rangeTo, setRangeTo] = useState(todayStr());
+  const [rangeFromInput, setRangeFromInput] = useState(() => {
+    try {
+      const stored = localStorage.getItem(getDateRangeStorageKey(token));
+      if (stored) return JSON.parse(stored).from || weekAgoStr();
+    } catch {}
+    return weekAgoStr();
+  });
+  const [rangeToInput, setRangeToInput] = useState(() => {
+    try {
+      const stored = localStorage.getItem(getDateRangeStorageKey(token));
+      if (stored) return JSON.parse(stored).to || todayStr();
+    } catch {}
+    return todayStr();
+  });
+  const [rangeFrom, setRangeFrom] = useState(() => {
+    try {
+      const stored = localStorage.getItem(getDateRangeStorageKey(token));
+      if (stored) return JSON.parse(stored).from || weekAgoStr();
+    } catch {}
+    return weekAgoStr();
+  });
+  const [rangeTo, setRangeTo] = useState(() => {
+    try {
+      const stored = localStorage.getItem(getDateRangeStorageKey(token));
+      if (stored) return JSON.parse(stored).to || todayStr();
+    } catch {}
+    return todayStr();
+  });
   const [tallyCounts, setTallyCounts] = useState({});
   const [tallyProject, setTallyProject] = useState(null);
   const [tallyComment, setTallyComment] = useState('');
@@ -134,7 +166,13 @@ export default function TimelogTab({ token, user }) {
       return false;
     }
   });
-  const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem(getCollapsedNodesStorageKey(token));
+      if (stored) return new Set(JSON.parse(stored));
+    } catch {}
+    return new Set();
+  });
 
   const requestedView = searchParams.get('timelogView');
   const tab = requestedView === 'analytics' ? 'analytics' : 'log';
@@ -153,6 +191,18 @@ export default function TimelogTab({ token, user }) {
   useEffect(() => {
     loadAll();
   }, [token]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getCollapsedNodesStorageKey(token), JSON.stringify([...collapsedNodeIds]));
+    } catch {}
+  }, [collapsedNodeIds, token]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getDateRangeStorageKey(token), JSON.stringify({ from: rangeFrom, to: rangeTo }));
+    } catch {}
+  }, [rangeFrom, rangeTo, token]);
 
   useEffect(() => {
     try {
@@ -458,6 +508,9 @@ export default function TimelogTab({ token, user }) {
     nextParams.set('tab', 'timelog');
     nextParams.set('timelogView', nextView);
     setSearchParams(nextParams);
+    if (nextView === 'log') {
+      setEndTime(toLocalInput(new Date(), tz));
+    }
   }
 
   if (loading) return <Loading />;

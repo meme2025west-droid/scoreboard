@@ -15,6 +15,8 @@ var process = Process.Start(new ProcessStartInfo
     Arguments = $"/c \"{batchPath}\"",
     WorkingDirectory = rootDir,
     UseShellExecute = false,
+    CreateNoWindow = true,
+    WindowStyle = ProcessWindowStyle.Hidden,
 });
 
 if (process is null)

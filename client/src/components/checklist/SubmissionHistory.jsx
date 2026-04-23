@@ -174,6 +174,16 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
                   <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 160 }} />
                 </div>
                 <button className="btn btn-primary btn-sm" onClick={() => loadAnalytics(from, to)} style={{ height: 38 }}>Apply</button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ height: 38 }}
+                  onClick={() => {
+                    const t = todayStr();
+                    setFrom(t);
+                    setTo(t);
+                    loadAnalytics(t, t);
+                  }}
+                >Today</button>
               </div>
               {loadingAnalytics && <Loading text="Loading analytics…" />}
               {!loadingAnalytics && analytics && (
@@ -215,19 +225,21 @@ export default function SubmissionHistory({ listId, listType, submissions, onClo
 
 function ChecklistAnalyticsRow({ node, rangeDays, depth }) {
   return (
-    <div className="checklist-analytics-row">
-      <div style={{ paddingLeft: `${depth * 22}px`, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-        <span style={{ width: 18, display: 'inline-block' }} />
-        <span style={{ fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {node.title}
-          {node.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{node.unit}]</span>}
-        </span>
+    <>
+      <div className="checklist-analytics-row">
+        <div style={{ paddingLeft: `${depth * 22}px`, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ width: 18, display: 'inline-block' }} />
+          <span style={{ fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {node.title}
+            {node.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{node.unit}]</span>}
+          </span>
+        </div>
+        <div className="checklist-analytics-count">{node.checkedDays}/{rangeDays}</div>
       </div>
-      <div className="checklist-analytics-count">{node.checkedDays}/{rangeDays}</div>
       {node.children?.length > 0 && node.children.map((child) => (
         <ChecklistAnalyticsRow key={child.id} node={child} rangeDays={rangeDays} depth={depth + 1} />
       ))}
-    </div>
+    </>
   );
 }
 

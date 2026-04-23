@@ -142,10 +142,26 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
         comment: values[i.id]?.comment || null,
         numberValue: isChecklist && values[i.id]?.numberValue !== '' ? parseFloat(values[i.id]?.numberValue) : null,
       }));
-      await submitList({ listId, notes: submitNotes, items });
+      const result = await submitList({ listId, notes: submitNotes, items });
       toast('Submitted!');
       setShowSubmit(false);
       setSubmitNotes('');
+      if (isChecklist) {
+        const submittedAt = new Date(result.submittedAt);
+        const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
+        const withinWindow = submittedAt > twentyHoursAgo;
+        const v = {};
+        allItems.forEach(i => {
+          const subItem = withinWindow ? result.items?.find(si => si.itemId === i.id) : null;
+          v[i.id] = {
+            checked: subItem ? (subItem.checked ?? false) : false,
+            score: null,
+            comment: subItem?.comment || '',
+            numberValue: subItem?.numberValue != null ? String(subItem.numberValue) : '',
+          };
+        });
+        setValues(v);
+      }
       loadSubmissions();
     } catch {
       toast('Failed to submit', 'error');

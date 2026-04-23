@@ -15,7 +15,7 @@ function endOfDay(dateValue) {
 
 function daysInclusive(fromDate, toDate) {
   const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.max(1, Math.floor((endOfDay(toDate) - startOfDay(fromDate)) / msPerDay) + 1);
+  return Math.max(1, Math.floor((toDate - fromDate) / msPerDay) + 1);
 }
 
 // Submit a list (create snapshot)

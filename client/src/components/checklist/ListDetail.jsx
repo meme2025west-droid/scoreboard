@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getList, updateList, addListItem, updateListItem, moveListItem, deleteListItem, duplicateDetachedList } from '../../api/lists.js';
-import { submitList, getSubmissions } from '../../api/submissions.js';
+import { submitList, getSubmissions, getSubmission } from '../../api/submissions.js';
 import { useToast } from '../common/Toast.jsx';
 import Loading from '../common/Loading.jsx';
 import Modal from '../common/Modal.jsx';
@@ -17,6 +17,7 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
   const [submitNotes, setSubmitNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submissions, setSubmissions] = useState([]);
+  const [recentCheckedIds, setRecentCheckedIds] = useState(() => new Set());
   const [editingTitle, setEditingTitle] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [titleVal, setTitleVal] = useState('');
@@ -71,6 +72,21 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
     try {
       const data = await getSubmissions(listId);
       setSubmissions(data);
+      if (data.length > 0) {
+        const latest = data[0];
+        const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
+        if (new Date(latest.submittedAt) > twentyHoursAgo) {
+          const full = await getSubmission(latest.id);
+          const ids = new Set(
+            (full.items || []).filter(si => si.checked).map(si => si.itemId)
+          );
+          setRecentCheckedIds(ids);
+        } else {
+          setRecentCheckedIds(new Set());
+        }
+      } else {
+        setRecentCheckedIds(new Set());
+      }
     } catch {}
   }
 
@@ -147,18 +163,9 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
       setShowSubmit(false);
       setSubmitNotes('');
       if (isChecklist) {
-        const submittedAt = new Date(result.submittedAt);
-        const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
-        const withinWindow = submittedAt > twentyHoursAgo;
         const v = {};
         allItems.forEach(i => {
-          const subItem = withinWindow ? result.items?.find(si => si.itemId === i.id) : null;
-          v[i.id] = {
-            checked: subItem ? (subItem.checked ?? false) : false,
-            score: null,
-            comment: subItem?.comment || '',
-            numberValue: subItem?.numberValue != null ? String(subItem.numberValue) : '',
-          };
+          v[i.id] = { checked: false, score: null, comment: '', numberValue: '' };
         });
         setValues(v);
       }
@@ -547,6 +554,7 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
             onToggleCollapse={handleToggleCollapse}
             onAddChild={handleStartAddItem}
             isTemplateLocked={isTemplateLocked}
+            recentCheckedIds={recentCheckedIds}
             selectedItemIds={selectedItemIds}
             onSelectRow={handleRowSelect}
             parentId={null}

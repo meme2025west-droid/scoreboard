@@ -18,9 +18,10 @@ function DropZone({ onDrop, depth = 0, isActive = false, onDragOver }) {
   );
 }
 
-export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, isTemplateLocked = false, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState, selectedItemIds, onSelectRow }) {
+export default function ListItemRow({ item, type, editMode = false, values, setValue, onDelete, onUpdate, onMove, onOutdent, onToggleCollapse, onAddChild, isTemplateLocked = false, depth = 0, parentId = null, index = 0, siblingsCount = 1, dragState: sharedDragState, setDragState: setSharedDragState, selectedItemIds, onSelectRow, recentCheckedIds }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
+  const [editUnit, setEditUnit] = useState(item.unit || '');
   const [showComment, setShowComment] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [editingNotes, setEditingNotes] = useState(item.notes || '');
@@ -47,9 +48,11 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
   }, [editMode, item.id, item.notes, showNotes]);
 
   function saveTitle() {
-    if (editTitle.trim() && editTitle !== item.title) {
-      onUpdate(item.id, { title: editTitle });
-    }
+    const updates = {};
+    if (editTitle.trim() && editTitle !== item.title) updates.title = editTitle;
+    const nextUnit = editUnit.trim() || null;
+    if (nextUnit !== (item.unit || null)) updates.unit = nextUnit;
+    if (Object.keys(updates).length > 0) onUpdate(item.id, updates);
     setEditing(false);
   }
 
@@ -177,19 +180,37 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
         {/* Title */}
         <div className="list-item-title">
           {editing ? (
-            <input
-              value={editTitle}
-              onChange={e => setEditTitle(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={e => e.key === 'Enter' && saveTitle()}
-              autoFocus
-              className="inline-edit-input"
-              style={{ background: 'transparent', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 4, fontSize: 14, width: '100%' }}
-            />
+            <div
+              style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%' }}
+              onBlur={e => {
+                if (!e.currentTarget.contains(e.relatedTarget)) saveTitle();
+              }}
+            >
+              <input
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && saveTitle()}
+                autoFocus
+                className="inline-edit-input"
+                style={{ background: 'transparent', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 4, fontSize: 14, flex: 1 }}
+              />
+              {isChecklist && (
+                <input
+                  value={editUnit}
+                  onChange={e => setEditUnit(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && saveTitle()}
+                  placeholder="unit"
+                  className="inline-edit-input"
+                  style={{ background: 'transparent', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 4, fontSize: 12, width: 60 }}
+                />
+              )}
+            </div>
           ) : (
-            <span onDoubleClick={() => { setEditing(true); setEditTitle(item.title); }}>{item.title}</span>
+            <span onDoubleClick={() => { if (editMode) { setEditing(true); setEditTitle(item.title); setEditUnit(item.unit || ''); } }}>{item.title}</span>
           )}
-          {isChecklist && item.unit && <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>[{item.unit}]</span>}
+          {isChecklist && recentCheckedIds?.has(item.id) && (
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', marginLeft: 8, verticalAlign: 'middle', opacity: 0.5 }} title="Checked in last submission (within 20h)" />
+          )}
           {editMode && item.notes && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', marginLeft: 8, verticalAlign: 'middle' }} title="This item has notes" />}
         </div>
 
@@ -360,6 +381,7 @@ export default function ListItemRow({ item, type, editMode = false, values, setV
               isTemplateLocked={isTemplateLocked}
               selectedItemIds={selectedItemIds}
               onSelectRow={onSelectRow}
+              recentCheckedIds={recentCheckedIds}
               depth={depth + 1}
               parentId={item.id}
               index={childIndex}

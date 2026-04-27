@@ -72,18 +72,14 @@ export default function ListDetail({ listId, onDelete, onUpdate, onReplaceList }
     try {
       const data = await getSubmissions(listId);
       setSubmissions(data);
-      if (data.length > 0) {
-        const latest = data[0];
-        const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
-        if (new Date(latest.submittedAt) > twentyHoursAgo) {
-          const full = await getSubmission(latest.id);
-          const ids = new Set(
-            (full.items || []).filter(si => si.checked).map(si => si.itemId)
-          );
-          setRecentCheckedIds(ids);
-        } else {
-          setRecentCheckedIds(new Set());
-        }
+      const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
+      const recent = data.filter(s => new Date(s.submittedAt) > twentyHoursAgo);
+      if (recent.length > 0) {
+        const fulls = await Promise.all(recent.map(s => getSubmission(s.id)));
+        const ids = new Set(
+          fulls.flatMap(f => (f.items || []).filter(si => si.checked).map(si => si.itemId))
+        );
+        setRecentCheckedIds(ids);
       } else {
         setRecentCheckedIds(new Set());
       }
